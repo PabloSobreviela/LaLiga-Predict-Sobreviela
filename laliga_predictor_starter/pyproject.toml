@@ -1,0 +1,9 @@
+[project]
+name = "laliga-predictor"
+version = "0.1.0"
+description = "Starter scaffold for a LaLiga match outcome predictor"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.black]
+line-length = 100
