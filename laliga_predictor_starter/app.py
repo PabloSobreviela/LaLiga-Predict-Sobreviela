@@ -1,4 +1,6 @@
-# app.py — LaLiga 25/26 Match Predictor (full app, streamlined + robust odds)
+# app.py — LaLiga 25/26 Match Predictor (auto-bootstraps on Streamlit Cloud)
+# - If models/model.joblib or data/processed/team_state.parquet are missing,
+#   the app will download CSVs, build features, and train automatically.
 
 import os
 import re
@@ -12,11 +14,12 @@ import requests
 import streamlit as st
 
 from src.config import CONFIG
-import src.features as F               # we'll call F.build_features via a helper below
+import src.features as F               # we'll call F.build_features or F.run_build_features
 from src.train_model import train as train_model
 
 DATA_RAW = Path(CONFIG["raw_data_path"])
 DATA_PROC = Path(CONFIG["processed_data_path"])
+MODEL_PATH = Path(CONFIG["model_path"])  # usually models/model.joblib
 
 # --------------------------- Page chrome & CSS ---------------------------
 st.set_page_config(
@@ -27,14 +30,9 @@ st.set_page_config(
 )
 
 CUSTOM_CSS = """
-/* Hide Streamlit chrome we don't need */
 #MainMenu, footer {visibility: hidden;}
 header {visibility: hidden;}
-
-/* Container padding */
 .block-container { padding-top: 1.25rem; padding-bottom: 2rem; }
-
-/* Gradient hero title */
 .hero h1 {
   font-size: clamp(1.8rem, 3.4vw, 3rem);
   line-height: 1.1;
@@ -43,11 +41,7 @@ header {visibility: hidden;}
   -webkit-text-fill-color: transparent;
   margin-bottom: .25rem;
 }
-.hero .sub {
-  color:#9ca3af; margin-top:0.25rem; font-size: .95rem;
-}
-
-/* Card */
+.hero .sub { color:#9ca3af; margin-top:0.25rem; font-size: .95rem; }
 .card {
   background: radial-gradient(1200px circle at 10% 10%, rgba(124,58,237,.12), transparent 40%),
               rgba(17,24,39,.65);
@@ -56,27 +50,15 @@ header {visibility: hidden;}
   padding: 1rem 1rem 1.1rem;
   box-shadow: 0 10px 26px rgba(0,0,0,.22);
 }
-
-/* Section titles inside cards */
 .card h3 { margin: 0 0 .75rem 0; font-size: 1.05rem; color:#e5e7eb; }
-
-/* Inputs: slightly rounder */
-.stNumberInput input, .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-  border-radius: 10px !important;
-}
-
-/* Buttons (distinct keys used in code) */
+.stNumberInput input, .stTextInput input, .stSelectbox div[data-baseweb="select"] { border-radius: 10px !important; }
 .stButton>button {
   background: linear-gradient(90deg,#7c3aed,#2563eb);
   color: white; border: 0; border-radius: 12px; padding: .55rem 1rem;
 }
 .stButton>button:hover { filter: brightness(1.08); }
-
-/* Pills */
-.pill {
-  display:inline-block; padding:.25rem .6rem; border-radius:999px;
-  background:#1f2937; color:#cbd5e1; font-size:.8rem; border:1px solid #374151;
-}
+.pill { display:inline-block; padding:.25rem .6rem; border-radius:999px;
+  background:#1f2937; color:#cbd5e1; font-size:.8rem; border:1px solid #374151; }
 """
 st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
 
@@ -89,7 +71,6 @@ H2H_MARKET      = "h2h"
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
-# Alias list — extend as needed (covers common shapes seen in odds feeds)
 STATIC_ALIAS_EXTRAS: Dict[str, List[str]] = {
     "Barcelona": ["FC Barcelona", "Barca", "FCBarcelona", "Barcelona CF"],
     "Real Madrid": ["Real Madrid CF", "RealMadrid"],
@@ -181,12 +162,6 @@ def list_upcoming_events(api_key: str, days_from: int = 60):
         return [], f"Events request failed: {e}"
 
 def _coerce_bookmakers_payload(payload):
-    """
-    Event odds payload can be:
-      - list[bookmaker]               (classic)
-      - dict{..., bookmakers: list}   (alternate)
-    Normalize to list[bookmaker] or return (None, reason).
-    """
     if isinstance(payload, list):
         return payload, None
     if isinstance(payload, dict):
@@ -199,8 +174,6 @@ def fetch_live_odds(home: str, away: str, api_key: str, alias_lookup: Dict[str, 
                    ) -> Tuple[Optional[Tuple[float,float,float,str]], Optional[str]]:
     if not api_key:
         return None, "No API key"
-
-    # 1) events
     try:
         r = requests.get(
             ODDS_EVENTS.format(sport=ODDS_SPORT_KEY),
@@ -215,18 +188,14 @@ def fetch_live_odds(home: str, away: str, api_key: str, alias_lookup: Dict[str, 
     except Exception as e:
         return None, f"Events request failed: {e}"
 
-    # 2) match event id
     ev_id = None
     for ev in events:
-        h = ev.get("home_team", "")
-        a = ev.get("away_team", "")
+        h = ev.get("home_team", ""); a = ev.get("away_team", "")
         if is_alias_match(h, home, alias_lookup) and is_alias_match(a, away, alias_lookup):
-            ev_id = ev.get("id")
-            break
+            ev_id = ev.get("id"); break
     if not ev_id:
         return None, "Fixture not found in upcoming events window"
 
-    # 3) event odds
     try:
         r2 = requests.get(
             ODDS_EVENT_ODDS.format(sport=ODDS_SPORT_KEY, event_id=ev_id),
@@ -250,12 +219,9 @@ def fetch_live_odds(home: str, away: str, api_key: str, alias_lookup: Dict[str, 
             if isinstance(m, dict) and m.get("key") == H2H_MARKET:
                 oh = od = oa = None
                 for o in (m.get("outcomes") or []):
-                    if not isinstance(o, dict):
-                        continue
-                    name_raw = o.get("name")
-                    price = o.get("price")
-                    if price is None:
-                        continue
+                    if not isinstance(o, dict): continue
+                    name_raw = o.get("name"); price = o.get("price")
+                    if price is None: continue
                     if _norm(name_raw) in ("home", _norm(home)) or is_alias_match(name_raw, home, alias_lookup):
                         oh = float(price)
                     elif _norm(name_raw) in ("away", _norm(away)) or is_alias_match(name_raw, away, alias_lookup):
@@ -264,7 +230,6 @@ def fetch_live_odds(home: str, away: str, api_key: str, alias_lookup: Dict[str, 
                         od = float(price)
                 if oh and od and oa:
                     return (oh, od, oa, bm.get("title", "bookmaker")), None
-
     return None, "No complete h2h market from bookmakers"
 
 # --------------------------- Model helpers ---------------------------
@@ -275,11 +240,67 @@ def label_to_season_code(label: str) -> str:
     return label.replace("/", "")
 
 def available_season_codes() -> List[str]:
-    # include 25/26 label for UI; downloader will skip if missing
     return ["2122", "2223", "2324", "2425", "2526"]
 
 def fair_odds(probs):
     return [(1/p if p > 0 else float("inf")) for p in probs]
+
+def run_build_features(seasons: Optional[List[str]] = None):
+    if hasattr(F, "build_features"):
+        return F.build_features(seasons=seasons)
+    if hasattr(F, "run_build_features"):
+        return F.run_build_features(seasons=seasons)
+    raise AttributeError("Neither build_features nor run_build_features found in src.features")
+
+# ---------- NEW: bootstrap so Cloud can start without committed artifacts ----------
+def _download_csvs_for(seasons: List[str]):
+    DATA_RAW.mkdir(parents=True, exist_ok=True)
+    for s in seasons:
+        if s == "2526":  # skip if not published yet
+            continue
+        url = f"https://www.football-data.co.uk/mmz4281/{s}/SP1.csv"
+        out = DATA_RAW / f"{CONFIG['league']}_{s}.csv"
+        if out.exists():
+            continue
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            out.write_bytes(r.content)
+        except Exception as e:
+            st.warning(f"Could not download {s}: {e}")
+
+def _artifacts_present() -> bool:
+    team_state_ok = (DATA_PROC / "team_state.parquet").exists()
+    model_ok = MODEL_PATH.exists()
+    return team_state_ok and model_ok
+
+def bootstrap_artifacts(default_seasons: List[str]):
+    """
+    If artifacts are missing on Streamlit Cloud, auto-download data, build features, and train.
+    """
+    if _artifacts_present():
+        return
+    with st.status("First run on this server → preparing data & training…", expanded=True) as status:
+        st.write("Downloading CSVs…")
+        _download_csvs_for(default_seasons)
+
+        st.write("Building features…")
+        run_build_features(seasons=default_seasons)
+
+        st.write("Training model…")
+        acc, ll, meta_out = train_model()
+
+        # store seasons metadata inside the bundle for info
+        bundle = joblib.load(CONFIG["model_path"])
+        bundle["meta"] = {**bundle.get("meta", {}), "seasons_used": default_seasons, "predict_season": "2526"}
+        joblib.dump(bundle, CONFIG["model_path"])
+
+        status.update(label=f"Done → Acc={acc:.3f}, LogLoss={ll:.3f}", state="complete")
+
+# --------------------------- Load artifacts (after bootstrap) ---------------------------
+# Use four seasons as a sensible default to bootstrap on Cloud:
+BOOTSTRAP_SEASONS = ["2122", "2223", "2324", "2425"]
+bootstrap_artifacts(BOOTSTRAP_SEASONS)
 
 @st.cache_resource
 def load_bundle():
@@ -295,7 +316,7 @@ def load_bundle():
 def load_team_state():
     fp = DATA_PROC / "team_state.parquet"
     if not fp.exists():
-        st.error("team_state.parquet not found. Click **Train / Data → Update dataset & retrain** first.")
+        st.error("team_state.parquet not found (bootstrap failed).")
         st.stop()
     ts = pd.read_parquet(fp).set_index("Team")
     teams = sorted(ts.index.tolist())
@@ -303,33 +324,26 @@ def load_team_state():
 
 def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dict):
     row = pd.Series({c: float(feature_means.get(c, 0.0)) for c in feature_order}, dtype=float)
-
     if home not in ts.index or away not in ts.index:
         raise ValueError("Team not found in team_state.parquet. Check team names.")
 
-    # Elo
-    elo_home = float(ts.loc[home, "elo"])
-    elo_away = float(ts.loc[away, "elo"])
+    elo_home = float(ts.loc[home, "elo"]); elo_away = float(ts.loc[away, "elo"])
     if "elo_home" in row.index: row["elo_home"] = elo_home
     if "elo_away" in row.index: row["elo_away"] = elo_away
     if "elo_diff" in row.index: row["elo_diff"] = elo_home - elo_away
 
-    # Recent form from team_state → feature row
-    # Recent form (mapped from team_state)
     mapping = {
         "team_last_gf": ("home_last_gf", "away_last_gf"),
         "team_last_ga": ("home_last_ga", "away_last_ga"),
         "team_last_gd": ("home_last_gd", "away_last_gd"),
         "team_last_sot_for": ("home_last_sot_for", "away_last_sot_for"),
         "team_last_sot_against": ("home_last_sot_against", "away_last_sot_against"),
-        "team_rest_days": ("rest_days_home", "rest_days_away"),  # aliases in app space
+        "team_rest_days": ("rest_days_home", "rest_days_away"),
     }
-
     for tcol, (hcol, acol) in mapping.items():
         if hcol in row.index: row[hcol] = float(ts.loc[home, tcol])
         if acol in row.index: row[acol] = float(ts.loc[away, tcol])
 
-    # Diffs if present
     if "form_gd_diff" in row.index:
         row["form_gd_diff"] = row.get("home_last_gd", 0.0) - row.get("away_last_gd", 0.0)
     if "form_sot_for_diff" in row.index:
@@ -347,15 +361,7 @@ def normalize_probs_from_odds(oh: float, od: float, oa: float):
     probs = raw / s if s > 0 else raw
     return probs.tolist(), s
 
-# Back-compat helper: call features.build_features from the app
-def run_build_features(seasons: Optional[List[str]] = None):
-    if hasattr(F, "build_features"):
-        return F.build_features(seasons=seasons)
-    if hasattr(F, "run_build_features"):
-        return F.run_build_features(seasons=seasons)
-    raise AttributeError("Neither build_features nor run_build_features found in src.features")
-
-# --------------------------- Load artifacts before UI ---------------------------
+# Load artifacts now that bootstrap is done
 pipe, feature_order, feature_means, meta = load_bundle()
 ts, teams = load_team_state()
 ALIAS_LOOKUP = build_alias_lookup(teams)
@@ -376,7 +382,6 @@ tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data"
 
 # --------------------------- PREDICT ---------------------------
 with tab_predict:
-    # Card: Match & Options
     col_left, col_right = st.columns([1, 1])
     with col_left:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -394,7 +399,6 @@ with tab_predict:
             market_weight = st.slider("Market weight", 0.0, 1.0, 0.25, 0.05, help="0 = model only, 1 = market only")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Card: Market odds (only if toggled)
     oddsH = oddsD = oddsA = None
     if use_market:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -414,7 +418,6 @@ with tab_predict:
         api_key = get_odds_api_key()
         fetch_now = st.button("Fetch live odds", key="btn_fetch_odds")
 
-        # Persist odds between interactions
         if "odds_values" not in st.session_state:
             st.session_state["odds_values"] = {"H": 2.00, "D": 3.40, "A": 3.20, "src": None}
 
@@ -458,7 +461,6 @@ with tab_predict:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Card: Predict
     st.markdown('<div class="card">', unsafe_allow_html=True)
     top_row = st.columns([1, 1])
     with top_row[0]:
@@ -469,7 +471,6 @@ with tab_predict:
     if predict_clicked:
         X = vector_for_match(home, away, feature_order, ts, feature_means)
         model_probs = pipe.predict_proba(X.values)[0].tolist()
-
         final_probs = model_probs[:]
         if use_market and (oddsH and oddsD and oddsA):
             try:
@@ -523,7 +524,6 @@ with tab_train:
     retrain_clicked = st.button("Update dataset & retrain", key="btn_retrain")
     if retrain_clicked:
         with st.status("Preparing data…", expanded=True) as status:
-            # Download CSVs (skip 25/26 if the file is not published yet)
             for s in selected_codes:
                 if s == "2526":
                     st.write(f"Note: {season_code_to_label(s)} may not have CSVs yet; training will ignore it if missing.")
@@ -546,20 +546,13 @@ with tab_train:
             st.write("Training model…")
             acc, ll, meta_out = train_model()
 
-            # Remember seasons & predict season in bundle
             bundle = joblib.load(CONFIG["model_path"])
             bundle["meta"] = {**bundle.get("meta", {}), "seasons_used": selected_codes, "predict_season": predict_code}
             joblib.dump(bundle, CONFIG["model_path"])
 
-            # refresh caches/artifacts in this session
-            load_bundle.clear()
-            load_team_state.clear()
-
-            # re-read artifacts for the live session (no 'global' needed here)
+            load_bundle.clear(); load_team_state.clear()
             pipe, feature_order, feature_means, meta = load_bundle()
             ts, teams = load_team_state()
-            ALIAS_LOOKUP = build_alias_lookup(teams)
-
             status.update(label=f"Done → Acc={acc:.3f}, LogLoss={ll:.3f}", state="complete")
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -569,9 +562,7 @@ with tab_about:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("<h3>About</h3>", unsafe_allow_html=True)
     st.write("""
-This project is a LaLiga Match predictor: by using logistic regression on datasets of past seasons this program predicts the future matches with an accuracy of 50-70%
-There is also an option to use merge betting odds with the prediction via The Odds API.
-
-Thank you for using the program!
+This project is a LaLiga Match predictor: by using logistic regression on datasets of past seasons this program predicts future matches.
+You can optionally blend bookmaker odds via The Odds API. Thanks for using it!
 """)
     st.markdown("</div>", unsafe_allow_html=True)
