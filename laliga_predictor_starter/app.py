@@ -434,208 +434,209 @@ with tab_predict:
         # ... keep the rest of the Predict UI exactly as you have it:
         # match selectors, options toggle, market odds card, Predict button, chart, etc.
         # (All the existing code that was below this point stays inside this `else:`)
-
-
-    # Card: Match & Options
-    col_left, col_right = st.columns([1, 1])
-    with col_left:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("<h3>Match</h3>", unsafe_allow_html=True)
-        home = st.selectbox("Home team", teams, index=0, key="home_team_ui")
-        away = st.selectbox("Away team", [t for t in teams if t != home], index=0, key="away_team_ui")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col_right:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("<h3>Options</h3>", unsafe_allow_html=True)
-        use_market = st.toggle("Enable live market odds", value=False, help="Blend model with normalized bookmaker odds.")
-        market_weight = 0.25
+    
+    
+        # Card: Match & Options
+        col_left, col_right = st.columns([1, 1])
+        with col_left:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("<h3>Match</h3>", unsafe_allow_html=True)
+            home = st.selectbox("Home team", teams, index=0, key="home_team_ui")
+            away = st.selectbox("Away team", [t for t in teams if t != home], index=0, key="away_team_ui")
+            st.markdown("</div>", unsafe_allow_html=True)
+    
+        with col_right:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("<h3>Options</h3>", unsafe_allow_html=True)
+            use_market = st.toggle("Enable live market odds", value=False, help="Blend model with normalized bookmaker odds.")
+            market_weight = 0.25
+            if use_market:
+                market_weight = st.slider("Market weight", 0.0, 1.0, 0.25, 0.05, help="0 = model only, 1 = market only")
+            st.markdown("</div>", unsafe_allow_html=True)
+    
+        # Card: Market odds (only if toggled)
+        oddsH = oddsD = oddsA = None
         if use_market:
-            market_weight = st.slider("Market weight", 0.0, 1.0, 0.25, 0.05, help="0 = model only, 1 = market only")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Card: Market odds (only if toggled)
-    oddsH = oddsD = oddsA = None
-    if use_market:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("<h3>Market odds</h3>", unsafe_allow_html=True)
-
-        api_cols = st.columns([1, 1, 2])
-        with api_cols[0]:
-            api_key_ui = st.text_input("Odds API key (kept local to this session)", type="password",
-                                       value=st.session_state.get("odds_api_key", ""))
-            if api_key_ui:
-                st.session_state["odds_api_key"] = api_key_ui
-        with api_cols[1]:
-            auto_fetch = st.toggle("Auto-fetch on team change", value=True)
-        with api_cols[2]:
-            st.caption("Tip: set `odds_api_key` in `.streamlit/secrets.toml` or `ODDS_API_KEY` env var.")
-
-        api_key = get_odds_api_key()
-        fetch_now = st.button("Fetch live odds", key="btn_fetch_odds")
-
-        # Persist odds between interactions
-        if "odds_values" not in st.session_state:
-            st.session_state["odds_values"] = {"H": 2.00, "D": 3.40, "A": 3.20, "src": None}
-
-        changed = (home != st.session_state.get("prev_home")) or (away != st.session_state.get("prev_away"))
-        if (auto_fetch and changed) or fetch_now:
-            if api_key:
-                result, reason = fetch_live_odds(home, away, api_key, ALIAS_LOOKUP, days_from=90)
-                if result:
-                    oh, od, oa, src = result
-                    st.session_state["odds_values"] = {"H": oh, "D": od, "A": oa, "src": src}
-                    st.success(f"Loaded odds from {src}", icon="✅")
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("<h3>Market odds</h3>", unsafe_allow_html=True)
+    
+            api_cols = st.columns([1, 1, 2])
+            with api_cols[0]:
+                api_key_ui = st.text_input("Odds API key (kept local to this session)", type="password",
+                                           value=st.session_state.get("odds_api_key", ""))
+                if api_key_ui:
+                    st.session_state["odds_api_key"] = api_key_ui
+            with api_cols[1]:
+                auto_fetch = st.toggle("Auto-fetch on team change", value=True)
+            with api_cols[2]:
+                st.caption("Tip: set `odds_api_key` in `.streamlit/secrets.toml` or `ODDS_API_KEY` env var.")
+    
+            api_key = get_odds_api_key()
+            fetch_now = st.button("Fetch live odds", key="btn_fetch_odds")
+    
+            # Persist odds between interactions
+            if "odds_values" not in st.session_state:
+                st.session_state["odds_values"] = {"H": 2.00, "D": 3.40, "A": 3.20, "src": None}
+    
+            changed = (home != st.session_state.get("prev_home")) or (away != st.session_state.get("prev_away"))
+            if (auto_fetch and changed) or fetch_now:
+                if api_key:
+                    result, reason = fetch_live_odds(home, away, api_key, ALIAS_LOOKUP, days_from=90)
+                    if result:
+                        oh, od, oa, src = result
+                        st.session_state["odds_values"] = {"H": oh, "D": od, "A": oa, "src": src}
+                        st.success(f"Loaded odds from {src}", icon="✅")
+                    else:
+                        st.warning(f"Couldn’t fetch odds: {reason}", icon="⚠️")
                 else:
-                    st.warning(f"Couldn’t fetch odds: {reason}", icon="⚠️")
-            else:
-                st.info("No API key set. Enter it above or in secrets/env.", icon="🔑")
-
-        st.session_state["prev_home"] = home
-        st.session_state["prev_away"] = away
-
-        odds_vals = st.session_state["odds_values"]
-        cH, cD, cA = st.columns(3)
-        oddsH = cH.number_input("Odds H", min_value=1.01, value=float(odds_vals["H"]), step=0.01, format="%.2f")
-        oddsD = cD.number_input("Odds D", min_value=1.01, value=float(odds_vals["D"]), step=0.01, format="%.2f")
-        oddsA = cA.number_input("Odds A", min_value=1.01, value=float(odds_vals["A"]), step=0.01, format="%.2f")
-
-        if st.session_state["odds_values"].get("src"):
-            st.caption(f'<span class="pill">Source: {st.session_state["odds_values"]["src"]}</span>',
-                       unsafe_allow_html=True)
-
-        with st.expander("Show upcoming fixtures (Odds API names)"):
-            evs, err = list_upcoming_events(get_odds_api_key(), days_from=90)
-            if err:
-                st.write(err)
-            elif not evs:
-                st.write("No events returned.")
-            else:
-                st.caption("Home vs Away as returned by the API (normalized in italics):")
-                for ev in evs:
-                    h = ev.get("home_team", ""); a = ev.get("away_team", "")
-                    st.write(f"• {h} vs {a}  _({_norm(h)} vs {_norm(a)})_")
-
+                    st.info("No API key set. Enter it above or in secrets/env.", icon="🔑")
+    
+            st.session_state["prev_home"] = home
+            st.session_state["prev_away"] = away
+    
+            odds_vals = st.session_state["odds_values"]
+            cH, cD, cA = st.columns(3)
+            oddsH = cH.number_input("Odds H", min_value=1.01, value=float(odds_vals["H"]), step=0.01, format="%.2f")
+            oddsD = cD.number_input("Odds D", min_value=1.01, value=float(odds_vals["D"]), step=0.01, format="%.2f")
+            oddsA = cA.number_input("Odds A", min_value=1.01, value=float(odds_vals["A"]), step=0.01, format="%.2f")
+    
+            if st.session_state["odds_values"].get("src"):
+                st.caption(f'<span class="pill">Source: {st.session_state["odds_values"]["src"]}</span>',
+                           unsafe_allow_html=True)
+    
+            with st.expander("Show upcoming fixtures (Odds API names)"):
+                evs, err = list_upcoming_events(get_odds_api_key(), days_from=90)
+                if err:
+                    st.write(err)
+                elif not evs:
+                    st.write("No events returned.")
+                else:
+                    st.caption("Home vs Away as returned by the API (normalized in italics):")
+                    for ev in evs:
+                        h = ev.get("home_team", ""); a = ev.get("away_team", "")
+                        st.write(f"• {h} vs {a}  _({_norm(h)} vs {_norm(a)})_")
+    
+            st.markdown("</div>", unsafe_allow_html=True)
+    
+        # Card: Predict
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        top_row = st.columns([1, 1])
+        with top_row[0]:
+            predict_clicked = st.button("Predict", key="btn_predict_main")
+        with top_row[1]:
+            st.caption("Calibrated probabilities; fair odds shown below.")
+    
+        if predict_clicked:
+            X = vector_for_match(home, away, feature_order, ts, feature_means)
+            # robust class ordering
+            model_probs = predict_proba_HDA(pipe, X.values).tolist()
+    
+            final_probs = model_probs[:]
+            if use_market and (oddsH and oddsD and oddsA):
+                try:
+                    market_probs, _ = normalize_probs_from_odds(oddsH, oddsD, oddsA)
+                    blend = (1 - market_weight) * np.array(model_probs) + market_weight * np.array(market_probs)
+                    final_probs = (blend / blend.sum()).tolist()
+                except Exception:
+                    st.warning("Invalid odds; falling back to model-only.")
+                    final_probs = model_probs
+    
+            labels = ["Home (H)", "Draw (D)", "Away (A)"]
+            pred_idx = int(np.argmax(final_probs))
+            pred_label = ["H", "D", "A"][pred_idx]
+    
+            st.markdown(f"**Prediction:** {pred_label}")
+            st.write({"H": round(final_probs[0], 3), "D": round(final_probs[1], 3), "A": round(final_probs[2], 3)})
+    
+            chart_df = pd.DataFrame({"Outcome": labels, "Probability": final_probs})
+            st.bar_chart(chart_df.set_index("Outcome"))
+    
+            fair = fair_odds(final_probs)
+            st.caption(f"Fair odds →  H: {fair[0]:.2f} • D: {fair[1]:.2f} • A: {fair[2]:.2f}")
+    
         st.markdown("</div>", unsafe_allow_html=True)
-
-    # Card: Predict
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    top_row = st.columns([1, 1])
-    with top_row[0]:
-        predict_clicked = st.button("Predict", key="btn_predict_main")
-    with top_row[1]:
-        st.caption("Calibrated probabilities; fair odds shown below.")
-
-    if predict_clicked:
-        X = vector_for_match(home, away, feature_order, ts, feature_means)
-        # robust class ordering
-        model_probs = predict_proba_HDA(pipe, X.values).tolist()
-
-        final_probs = model_probs[:]
-        if use_market and (oddsH and oddsD and oddsA):
-            try:
-                market_probs, _ = normalize_probs_from_odds(oddsH, oddsD, oddsA)
-                blend = (1 - market_weight) * np.array(model_probs) + market_weight * np.array(market_probs)
-                final_probs = (blend / blend.sum()).tolist()
-            except Exception:
-                st.warning("Invalid odds; falling back to model-only.")
-                final_probs = model_probs
-
-        labels = ["Home (H)", "Draw (D)", "Away (A)"]
-        pred_idx = int(np.argmax(final_probs))
-        pred_label = ["H", "D", "A"][pred_idx]
-
-        st.markdown(f"**Prediction:** {pred_label}")
-        st.write({"H": round(final_probs[0], 3), "D": round(final_probs[1], 3), "A": round(final_probs[2], 3)})
-
-        chart_df = pd.DataFrame({"Outcome": labels, "Probability": final_probs})
-        st.bar_chart(chart_df.set_index("Outcome"))
-
-        fair = fair_odds(final_probs)
-        st.caption(f"Fair odds →  H: {fair[0]:.2f} • D: {fair[1]:.2f} • A: {fair[2]:.2f}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# --------------------------- TRAIN / DATA ---------------------------
-with tab_train:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("<h3>Dataset & Training</h3>", unsafe_allow_html=True)
-
-    season_codes = available_season_codes()
-    labels = [season_code_to_label(s) for s in season_codes]
-    default_last_n = 3
-    default_idx = list(range(max(0, len(season_codes) - default_last_n), len(season_codes)))
-    selected_labels = st.multiselect(
-        "Training seasons",
-        labels,
-        default=[labels[i] for i in default_idx],
-        key="train_seasons"
-    )
-    selected_codes = [label_to_season_code(x) for x in selected_labels]
-
-    predict_label = st.selectbox(
-        "Prediction season (metadata only)",
-        [season_code_to_label(s) for s in season_codes],
-        index=season_codes.index("2526"),
-        key="predict_season"
-    )
-    predict_code = label_to_season_code(predict_label)
-
-    retrain_clicked = st.button("Update dataset & retrain", key="btn_retrain")
-    if retrain_clicked:
-        with st.status("Preparing data…", expanded=True) as status:
-            # Download CSVs (skip 25/26 if the file is not published yet)
-            for s in selected_codes:
-                if s == "2526":
-                    st.write(f"Note: {season_code_to_label(s)} may not have CSVs yet; training will ignore it if missing.")
-                    continue
-                url = f"https://www.football-data.co.uk/mmz4281/{s}/SP1.csv"
-                DATA_RAW.mkdir(parents=True, exist_ok=True)
-                out = DATA_RAW / f"{CONFIG['league']}_{s}.csv"
-                if not out.exists():
-                    st.write(f"Downloading {season_code_to_label(s)}…")
-                    try:
-                        rr = requests.get(url, timeout=30)
-                        rr.raise_for_status()
-                        out.write_bytes(rr.content)
-                    except Exception as e:
-                        st.warning(f"Could not download {s}: {e}")
-
-            st.write("Building features…")
-            run_build_features(seasons=selected_codes)
-
-            st.write("Training model…")
-            # Ensure models dir exists
-            Path(CONFIG["model_path"]).parent.mkdir(parents=True, exist_ok=True)
-            acc, ll, meta_out = train_model()
-
-            # Remember seasons & predict season in bundle
-            bundle_path = Path(CONFIG["model_path"])
-            bundle = joblib.load(bundle_path)
-            bundle["meta"] = {**bundle.get("meta", {}), "seasons_used": selected_codes, "predict_season": predict_code}
-            joblib.dump(bundle, bundle_path)
-
-            # refresh caches/artifacts in this session
-            load_bundle.clear(); load_team_state.clear()
-
-            # re-read artifacts for the live session
-            pipe, feature_order, feature_means, meta = load_bundle()
-            ts, teams = load_team_state()
-            ALIAS_LOOKUP = build_alias_lookup(teams) if len(teams) > 0 else {}
-
-            status.update(label=f"Done → Acc={acc:.3f}, LogLoss={ll:.3f}", state="complete")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# --------------------------- ABOUT ---------------------------
-with tab_about:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("<h3>About</h3>", unsafe_allow_html=True)
-    st.write("""
-This project is a LaLiga Match predictor: by using logistic regression on datasets of past seasons this program predicts the future matches with an accuracy of ~50–70%.
-There is also an option to merge betting odds with the prediction via The Odds API.
-
-Thank you for using the program!
-""")
-    st.markdown("</div>", unsafe_allow_html=True)
-
+    
+    # --------------------------- TRAIN / DATA ---------------------------
+    with tab_train:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("<h3>Dataset & Training</h3>", unsafe_allow_html=True)
+    
+        season_codes = available_season_codes()
+        labels = [season_code_to_label(s) for s in season_codes]
+        default_last_n = 3
+        default_idx = list(range(max(0, len(season_codes) - default_last_n), len(season_codes)))
+        selected_labels = st.multiselect(
+            "Training seasons",
+            labels,
+            default=[labels[i] for i in default_idx],
+            key="train_seasons"
+        )
+        selected_codes = [label_to_season_code(x) for x in selected_labels]
+    
+        predict_label = st.selectbox(
+            "Prediction season (metadata only)",
+            [season_code_to_label(s) for s in season_codes],
+            index=season_codes.index("2526"),
+            key="predict_season"
+        )
+        predict_code = label_to_season_code(predict_label)
+    
+        retrain_clicked = st.button("Update dataset & retrain", key="btn_retrain")
+        if retrain_clicked:
+            with st.status("Preparing data…", expanded=True) as status:
+                # Download CSVs (skip 25/26 if the file is not published yet)
+                for s in selected_codes:
+                    if s == "2526":
+                        st.write(f"Note: {season_code_to_label(s)} may not have CSVs yet; training will ignore it if missing.")
+                        continue
+                    url = f"https://www.football-data.co.uk/mmz4281/{s}/SP1.csv"
+                    DATA_RAW.mkdir(parents=True, exist_ok=True)
+                    out = DATA_RAW / f"{CONFIG['league']}_{s}.csv"
+                    if not out.exists():
+                        st.write(f"Downloading {season_code_to_label(s)}…")
+                        try:
+                            rr = requests.get(url, timeout=30)
+                            rr.raise_for_status()
+                            out.write_bytes(rr.content)
+                        except Exception as e:
+                            st.warning(f"Could not download {s}: {e}")
+    
+                st.write("Building features…")
+                run_build_features(seasons=selected_codes)
+    
+                st.write("Training model…")
+                # Ensure models dir exists
+                Path(CONFIG["model_path"]).parent.mkdir(parents=True, exist_ok=True)
+                acc, ll, meta_out = train_model()
+    
+                # Remember seasons & predict season in bundle
+                bundle_path = Path(CONFIG["model_path"])
+                bundle = joblib.load(bundle_path)
+                bundle["meta"] = {**bundle.get("meta", {}), "seasons_used": selected_codes, "predict_season": predict_code}
+                joblib.dump(bundle, bundle_path)
+    
+                # refresh caches/artifacts in this session
+                load_bundle.clear(); load_team_state.clear()
+    
+                # re-read artifacts for the live session
+                pipe, feature_order, feature_means, meta = load_bundle()
+                ts, teams = load_team_state()
+                ALIAS_LOOKUP = build_alias_lookup(teams) if len(teams) > 0 else {}
+    
+                status.update(label=f"Done → Acc={acc:.3f}, LogLoss={ll:.3f}", state="complete")
+    
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --------------------------- ABOUT ---------------------------
+    with tab_about:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("<h3>About</h3>", unsafe_allow_html=True)
+        st.write("""
+    This project is a LaLiga Match predictor: by using logistic regression on datasets of past seasons this program predicts the future matches with an accuracy of ~50–70%.
+    There is also an option to merge betting odds with the prediction via The Odds API.
+    
+    Thank you for using the program!
+    """)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    
