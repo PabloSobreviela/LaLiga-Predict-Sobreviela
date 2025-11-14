@@ -1,4 +1,4 @@
-# app.py — LaLiga 25/26 Match Predictor (full app, robust class-order handling)
+# app.py — LaLiga 25/26 Match Predictor (Cloud-safe loaders + odds + styled UI)
 
 import os
 import re
@@ -12,7 +12,7 @@ import requests
 import streamlit as st
 
 from src.config import CONFIG
-import src.features as F               # we'll call F.build_features via a helper below
+import src.features as F                 # we'll call F.build_features via helper
 from src.train_model import train as train_model
 
 DATA_RAW = Path(CONFIG["raw_data_path"])
@@ -283,23 +283,38 @@ def fair_odds(probs):
 
 @st.cache_resource
 def load_bundle():
-    bundle = joblib.load(CONFIG["model_path"])
-    return (
-        bundle["pipeline"],
-        bundle["feature_order"],
-        bundle.get("feature_means", {}),
-        bundle.get("meta", {}),
-    )
+    """Load the trained bundle if it exists; otherwise return Nones."""
+    path = Path(CONFIG["model_path"])
+    if not path.exists():
+        return None, None, {}, {}
+    try:
+        bundle = joblib.load(path)
+        return (
+            bundle["pipeline"],
+            bundle["feature_order"],
+            bundle.get("feature_means", {}),
+            bundle.get("meta", {}),
+        )
+    except Exception as e:
+        st.warning(f"Couldn’t load model bundle at {path}: {e}")
+        return None, None, {}, {}
 
 @st.cache_data
 def load_team_state():
-    fp = DATA_PROC / "team_state.parquet"
+    """Load team_state if available; otherwise return empty structures."""
+    fp = Path(CONFIG["processed_data_path"]) / "team_state.parquet"
     if not fp.exists():
-        st.error("team_state.parquet not found. Click **Train / Data → Update dataset & retrain** first.")
-        st.stop()
-    ts = pd.read_parquet(fp).set_index("Team")
-    teams = sorted(ts.index.tolist())
-    return ts, teams
+        return pd.DataFrame(), []
+    try:
+        ts = pd.read_parquet(fp)
+        if "Team" not in ts.columns:
+            return pd.DataFrame(), []
+        ts = ts.set_index("Team")
+        teams = sorted(ts.index.tolist())
+        return ts, teams
+    except Exception as e:
+        st.warning(f"Couldn’t load team_state: {e}")
+        return pd.DataFrame(), []
 
 def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dict):
     row = pd.Series({c: float(feature_means.get(c, 0.0)) for c in feature_order}, dtype=float)
@@ -321,9 +336,8 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
         "team_last_gd": ("home_last_gd", "away_last_gd"),
         "team_last_sot_for": ("home_last_sot_for", "away_last_sot_for"),
         "team_last_sot_against": ("home_last_sot_against", "away_last_sot_against"),
-        "team_rest_days": ("rest_days_home", "rest_days_away"),
+        "team_rest_days": ("rest_days_home", "rest_days_away"),  # aliases in app space
     }
-
     for tcol, (hcol, acol) in mapping.items():
         if hcol in row.index: row[hcol] = float(ts.loc[home, tcol])
         if acol in row.index: row[acol] = float(ts.loc[away, tcol])
@@ -346,65 +360,35 @@ def normalize_probs_from_odds(oh: float, od: float, oa: float):
     probs = raw / s if s > 0 else raw
     return probs.tolist(), s
 
-# ---------- Robust class-order handling for predict_proba ----------
-def _final_estimator(pipe):
-    """Return the last step (estimator) from a scikit-learn Pipeline, or pipe if not a pipeline."""
+def predict_proba_HDA(pipe, X_values: np.ndarray) -> np.ndarray:
+    """
+    Robustly get probs in [H,D,A] order even if underlying classifier stores classes differently.
+    Assumes training label mapping H->0, D->1, A->2.
+    """
+    proba = pipe.predict_proba(X_values)
+    classes = getattr(pipe, "classes_", None)
+    if classes is None and hasattr(pipe, "steps"):
+        # try final estimator in pipeline
+        est = pipe.steps[-1][1]
+        classes = getattr(est, "classes_", None)
+    if classes is None:
+        # fallback assume already in order
+        return proba[0]
+    # map to indices
     try:
-        return pipe[-1]
+        class_to_idx = {int(c): i for i in classes}
     except Exception:
-        try:
-            return pipe.steps[-1][1]
-        except Exception:
-            return pipe
-
-def _get_classes(pipe):
-    """Find the learned classes_ from the final estimator or the pipeline itself."""
-    est = _final_estimator(pipe)
-    classes = getattr(est, "classes_", None)
-    if classes is None:
-        classes = getattr(pipe, "classes_", None)
-    return classes
-
-def predict_proba_HDA(pipe, Xrow) -> List[float]:
-    """
-    Return probabilities in [H, D, A] order, robust to either numeric classes (0,1,2)
-    or label classes ('H','D','A'), regardless of how the model was fit.
-    """
-    proba = pipe.predict_proba(Xrow)[0]
-    classes = _get_classes(pipe)
-
-    # If the model doesn't expose classes_, assume proba already in H,D,A
-    if classes is None:
-        p = np.array(proba, dtype=float)
-        if p.shape[0] == 3:
-            s = p.sum()
-            return (p / s).tolist() if s > 0 else p.tolist()
-        raise ValueError("Model does not expose classes_ and predict_proba shape != 3.")
-
-    # Build index map for H/D/A, accepting both numeric and string classes
-    idxH = idxD = idxA = None
-    for i, c in enumerate(list(classes)):
-        if isinstance(c, str):
-            token = c.strip().lower()
-            if token in ("h", "home", "0"): idxH = i
-            elif token in ("d", "draw", "tie", "1"): idxD = i
-            elif token in ("a", "away", "2"): idxA = i
-        else:
-            if c == 0: idxH = i
-            elif c == 1: idxD = i
-            elif c == 2: idxA = i
-
-    if any(v is None for v in (idxH, idxD, idxA)):
-        if len(classes) == 3:
-            idxH, idxD, idxA = 0, 1, 2
-        else:
-            raise ValueError(f"Unsupported class set: {classes!r}")
-
-    pH, pD, pA = float(proba[idxH]), float(proba[idxD]), float(proba[idxA])
-    s = pH + pD + pA
+        # if classes are strings like "0","1","2"
+        class_to_idx = {int(str(c)): i for i in classes}
+    out = np.zeros(3, dtype=float)
+    for lbl in (0, 1, 2):
+        if lbl in class_to_idx:
+            out[lbl] = proba[0][class_to_idx[lbl]]
+    # normalize just in case tiny drift
+    s = out.sum()
     if s > 0:
-        pH, pD, pA = pH / s, pD / s, pA / s
-    return [pH, pD, pA]
+        out = out / s
+    return out
 
 # Back-compat helper: call features.build_features from the app
 def run_build_features(seasons: Optional[List[str]] = None):
@@ -417,7 +401,8 @@ def run_build_features(seasons: Optional[List[str]] = None):
 # --------------------------- Load artifacts before UI ---------------------------
 pipe, feature_order, feature_means, meta = load_bundle()
 ts, teams = load_team_state()
-ALIAS_LOOKUP = build_alias_lookup(teams)
+artifacts_ready = (pipe is not None) and (ts is not None) and (len(teams) > 0)
+ALIAS_LOOKUP = build_alias_lookup(teams) if len(teams) > 0 else {}
 
 # --------------------------- HERO ---------------------------
 st.markdown(
@@ -435,6 +420,18 @@ tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data"
 
 # --------------------------- PREDICT ---------------------------
 with tab_predict:
+    if not artifacts_ready:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("<h3>Predict</h3>", unsafe_allow_html=True)
+        st.info(
+            "Model artifacts not found on this server yet. Open **🧪 Train / Data** and click "
+            "**Update dataset & retrain** to build the dataset and train the model. "
+            "After it finishes, come back here.",
+            icon="ℹ️",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.stop()
+
     # Card: Match & Options
     col_left, col_right = st.columns([1, 1])
     with col_left:
@@ -527,8 +524,8 @@ with tab_predict:
 
     if predict_clicked:
         X = vector_for_match(home, away, feature_order, ts, feature_means)
-        # Robust class-order handling:
-        model_probs = predict_proba_HDA(pipe, X.values)  # -> [H, D, A]
+        # robust class ordering
+        model_probs = predict_proba_HDA(pipe, X.values).tolist()
 
         final_probs = model_probs[:]
         if use_market and (oddsH and oddsD and oddsA):
@@ -604,21 +601,23 @@ with tab_train:
             run_build_features(seasons=selected_codes)
 
             st.write("Training model…")
+            # Ensure models dir exists
+            Path(CONFIG["model_path"]).parent.mkdir(parents=True, exist_ok=True)
             acc, ll, meta_out = train_model()
 
             # Remember seasons & predict season in bundle
-            bundle = joblib.load(CONFIG["model_path"])
+            bundle_path = Path(CONFIG["model_path"])
+            bundle = joblib.load(bundle_path)
             bundle["meta"] = {**bundle.get("meta", {}), "seasons_used": selected_codes, "predict_season": predict_code}
-            joblib.dump(bundle, CONFIG["model_path"])
+            joblib.dump(bundle, bundle_path)
 
             # refresh caches/artifacts in this session
-            load_bundle.clear()
-            load_team_state.clear()
+            load_bundle.clear(); load_team_state.clear()
 
             # re-read artifacts for the live session
             pipe, feature_order, feature_means, meta = load_bundle()
             ts, teams = load_team_state()
-            ALIAS_LOOKUP = build_alias_lookup(teams)
+            ALIAS_LOOKUP = build_alias_lookup(teams) if len(teams) > 0 else {}
 
             status.update(label=f"Done → Acc={acc:.3f}, LogLoss={ll:.3f}", state="complete")
 
@@ -630,7 +629,7 @@ with tab_about:
     st.markdown("<h3>About</h3>", unsafe_allow_html=True)
     st.write("""
 This project is a LaLiga Match predictor: by using logistic regression on datasets of past seasons this program predicts the future matches with an accuracy of ~50–70%.
-There is also an option to blend bookmaker odds via The Odds API.
+There is also an option to merge betting odds with the prediction via The Odds API.
 
 Thank you for using the program!
 """)
