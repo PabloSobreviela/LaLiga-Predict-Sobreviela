@@ -12,7 +12,6 @@ Outputs (under CONFIG['processed_data_path']):
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 
@@ -30,10 +29,46 @@ def _raw_path_for(season_code: str) -> Path:
     # football-data.co.uk dump is expected to have been saved as e.g. "laliga_2324.csv"
     return DATA_RAW / f"{CONFIG['league']}_{season_code}.csv"
 
+def _parse_dates(series: pd.Series) -> pd.Series:
+    """
+    Robustly parse mixed football-data 'Date' columns across seasons:
+    - common forms: DD/MM/YY, DD/MM/YYYY, YYYY-MM-DD
+    - occasionally timezone-bearing strings
+    - rarely numbers (epoch-like) -> treat as strings first
+    """
+    s = series.astype(str).str.strip()
+
+    # First, try the common day-first interpretation (covers DD/MM/YY and DD/MM/YYYY)
+    out = pd.to_datetime(s, dayfirst=True, errors="coerce")
+
+    if out.isna().all():
+        # Try explicit formats one by one
+        for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
+            out = pd.to_datetime(s, format=fmt, errors="coerce")
+            if out.notna().any():
+                break
+
+    # If still all NaT, try letting pandas infer without dayfirst
+    if out.isna().all():
+        out = pd.to_datetime(s, errors="coerce")
+
+    # Drop tz info if present
+    try:
+        if getattr(out.dt, "tz", None) is not None:
+            out = out.dt.tz_convert(None)
+        out = out.dt.tz_localize(None)
+    except Exception:
+        pass
+
+    if out.isna().all():
+        raise ValueError("Could not parse any dates from the CSV's Date column.")
+    return out
+
 def _read_raw_csv(path: Path) -> pd.DataFrame:
     # football-data columns vary a bit by year; we standardize right away
     df = pd.read_csv(path)
-    # Try common column names
+
+    # Try common column name sets
     col_map_candidates = [
         # (Home team, Away team, Home goals, Away goals, Result, Date, HST, AST)
         ("HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "Date", "HST", "AST"),
@@ -42,7 +77,8 @@ def _read_raw_csv(path: Path) -> pd.DataFrame:
     use_map = None
     for hm, am, hg, ag, res, date, hst, ast in col_map_candidates:
         if hm in df.columns and am in df.columns and hg in df.columns and ag in df.columns and res in df.columns:
-            use_map = (hm, am, hg, ag, res, date if date in df.columns else None,
+            use_map = (hm, am, hg, ag, res,
+                       date if date in df.columns else None,
                        hst if hst in df.columns else None,
                        ast if ast in df.columns else None)
             break
@@ -50,23 +86,35 @@ def _read_raw_csv(path: Path) -> pd.DataFrame:
         raise KeyError(f"Could not find expected football-data columns in {path.name}")
 
     hm, am, hg, ag, res, date, hst, ast = use_map
+
+    # Parse date robustly
+    if date:
+        date_parsed = _parse_dates(df[date])
+    else:
+        # Extremely rare fallback: use index as day offset (kept for completeness)
+        date_parsed = pd.to_datetime(df.index, unit="D", origin="unix", errors="coerce")
+
     out = pd.DataFrame({
-        "Date": pd.to_datetime(df[date]) if date else pd.to_datetime(df.index, unit="D", origin="unix", errors="ignore"),
+        "Date": date_parsed,
         "Home": df[hm].astype(str),
         "Away": df[am].astype(str),
         "FTHG": pd.to_numeric(df[hg], errors="coerce"),
         "FTAG": pd.to_numeric(df[ag], errors="coerce"),
         "FTR":  df[res].astype(str),
     })
+
+    # On-targets (optional in some seasons)
     out["HST"] = pd.to_numeric(df[hst], errors="coerce") if hst else np.nan
     out["AST"] = pd.to_numeric(df[ast], errors="coerce") if ast else np.nan
 
-    # Normalize FTR to H/D/A if some seasons use other tokens
+    # Normalize FTR to H/D/A (derive from goals if necessary)
     out["FTR"] = out["FTR"].map({"H":"H","D":"D","A":"A"}).fillna(
         np.where(out["FTHG"]>out["FTAG"], "H",
         np.where(out["FTHG"]<out["FTAG"], "A", "D"))
     )
-    return out.sort_values("Date").reset_index(drop=True)
+
+    out = out.dropna(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+    return out
 
 # ------------------------------- Elo utils --------------------------------
 
@@ -268,7 +316,6 @@ def build_features(seasons: Optional[List[str]] = None) -> None:
     feats.to_parquet(DATA_PROC / "features_train.parquet", index=False)
 
     # 4) team_state snapshot (latest row per team, after last match)
-    last_date = matches["Date"].max()
     # last known rolling values (no shift) for snapshot
     snap_cols = ["Team","Date","rest_days","last5_gf","last5_ga","last5_gd","last5_sotf","last5_sota"]
     latest_long = long.sort_values("Date").groupby("Team", as_index=False).last()[snap_cols]
