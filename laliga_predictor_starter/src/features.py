@@ -37,74 +37,59 @@ def _find_col(df: pd.DataFrame, candidates: Iterable[str]) -> Optional[str]:
 
 def _read_raw_csv(path: Path) -> pd.DataFrame:
     """
-    Read one football-data CSV and normalize to:
-      Date (datetime64), Home, Away, FTHG (int), FTAG (int), FTR (H/D/A)
-    Handles mild naming / encoding differences and missing FTR by deriving from goals.
+    Read one Football-Data.co.uk CSV (SP1.csv style) and normalize columns we use.
+    Produces columns: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR (H/D/A).
     """
     df = pd.read_csv(path)
 
-    # Likely column names in football-data
-    date_col = _find_col(df, ["Date"])
-    home_col = _find_col(df, ["HomeTeam", "Home", "Home Team", "Home_Team"])
-    away_col = _find_col(df, ["AwayTeam", "Away", "Away Team", "Away_Team"])
-    fthg_col = _find_col(df, ["FTHG", "HomeGoals", "HG"])
-    ftag_col = _find_col(df, ["FTAG", "AwayGoals", "AG"])
-    ftr_col  = _find_col(df, ["FTR", "Result"])
+    # Column name flex (different seasons sometimes vary)
+    home_team = _first_col(df, ["HomeTeam", "Home", "HT"])
+    away_team = _first_col(df, ["AwayTeam", "Away", "AT"])
+    fthg      = _first_col(df, ["FTHG", "HomeGoals", "HG"])
+    ftag      = _first_col(df, ["FTAG", "AwayGoals", "AG"])
+    ftr       = _first_col(df, ["FTR", "Result"])
+    date      = _first_col(df, ["Date", "MatchDate", "DateTime"])
 
-    # Date parsing: football-data dates are day-first (e.g., 21/08/2024)
-    if date_col:
-        date_parsed = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True, utc=False)
+    out = pd.DataFrame({
+        "HomeTeam": df[home_team],
+        "AwayTeam": df[away_team],
+        "FTHG":     pd.to_numeric(df[fthg], errors="coerce"),
+        "FTAG":     pd.to_numeric(df[ftag], errors="coerce"),
+    })
+
+    # Parse Date robustly
+    if date:
+        out["Date"] = pd.to_datetime(df[date], errors="coerce", dayfirst=True, utc=False)
+        # Fallback parse if dayfirst didn’t work well
+        bad = out["Date"].isna()
+        if bad.any():
+            out.loc[bad, "Date"] = pd.to_datetime(df.loc[bad, date], errors="coerce", utc=False)
     else:
-        # If somehow no date column exists, try to coerce the index (rare/fallback)
-        date_parsed = pd.to_datetime(df.index, errors="coerce", utc=False)
+        # Very old dumps sometimes miss a Date; fall back to NaT
+        out["Date"] = pd.NaT
 
-    # Goals numeric
-    if fthg_col is None or ftag_col is None:
-        raise KeyError(
-            f"Could not find goal columns in {path.name}. "
-            f"Found columns: {list(df.columns)}"
-        )
-    hg = pd.to_numeric(df[fthg_col], errors="coerce")
-    ag = pd.to_numeric(df[ftag_col], errors="coerce")
+    # Ensure we have an FTR (H/D/A). Some seasons have it, others don’t, or it may be noisy.
+    # Compute from goals first:
+    derived_ftr = np.where(
+        out["FTHG"] > out["FTAG"], "H",
+        np.where(out["FTHG"] < out["FTAG"], "A", "D")
+    )
 
-    # FTR robust normalization
-    if ftr_col is not None:
-        # Keep only valid codes; coerce rest to NaN
-        ftr_raw = df[ftr_col].astype(str).str.upper()
-        ftr_valid = ftr_raw.where(ftr_raw.isin(["H", "D", "A"]))
+    if ftr:
+        # Start with the provided FTR
+        out["FTR"] = df[ftr].astype(str).str.upper().str.strip()
+        # Keep only valid codes; overwrite invalid/missing with derived
+        valid = out["FTR"].isin(["H", "D", "A"])
+        needs = ~valid | out["FTR"].isna()
+        out.loc[needs, "FTR"] = pd.Series(derived_ftr, index=out.index).loc[needs]
     else:
-        ftr_valid = pd.Series(index=df.index, dtype="object")
+        # No FTR column -> just use derived
+        out["FTR"] = derived_ftr
 
-    # Build an ALIGNED Series fallback from goals (important: not a bare ndarray)
-    fallback = pd.Series(
-        np.where(hg > ag, "H", np.where(hg < ag, "A", "D")),
-        index=df.index
-    )
-
-    out = pd.DataFrame(
-        {
-            "Date": date_parsed,
-            "Home": df[home_col].astype(str) if home_col else pd.Series("", index=df.index, dtype=str),
-            "Away": df[away_col].astype(str) if away_col else pd.Series("", index=df.index, dtype=str),
-            "FTHG": hg,
-            "FTAG": ag,
-            "FTR":  ftr_valid.fillna(fallback),
-        }
-    )
-
-    # Drop rows with missing criticals
-    out = out.dropna(subset=["Date", "Home", "Away"])
-    out["Date"] = pd.to_datetime(out["Date"], errors="coerce", utc=False)
-    out = out.dropna(subset=["Date"]).reset_index(drop=True)
-
-    # Ensure types
-    out["FTHG"] = out["FTHG"].fillna(0).astype(int)
-    out["FTAG"] = out["FTAG"].fillna(0).astype(int)
-    out["FTR"]  = out["FTR"].where(out["FTR"].isin(["H", "D", "A"])).fillna(
-        np.where(out["FTHG"] > out["FTAG"], "H", np.where(out["FTHG"] < out["FTAG"], "A", "D"))
-    )
-
+    # Drop rows still missing essentials
+    out = out.dropna(subset=["HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]).reset_index(drop=True)
     return out
+
 
 
 # --------------------------- LONG TABLE & FORM -------------------------- #
