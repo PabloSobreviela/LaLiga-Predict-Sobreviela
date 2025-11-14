@@ -1,4 +1,6 @@
-# LaLiga 25/26 Match Predictor
+# LaLiga 25/26 Match Predictor 
+
+**Website: https://laliga-predict-sobreviela.streamlit.app/**
 
 **End-to-end football (soccer) match outcome predictor for LaLiga** with an optional blend of **real bookmaker odds**. Clean Streamlit UI, reproducible training pipeline, and simple deployment.
 
@@ -91,23 +93,6 @@ laliga_predictor_starter/
 
 ---
 
-## ☁️ Deploy (Streamlit Community Cloud)
-
-1. Push this repo to GitHub (or use GitHub's “Upload files”).
-2. In Streamlit Cloud, create a new app:
-   - **Repository:** your repo
-   - **Branch:** `main`
-   - **Main file:** `laliga_predictor_starter/app.py`
-3. Add **secrets** (if you want live odds):
-   ```toml
-   odds_api_key = "your_key"
-   ```
-4. First boot: Open **🧪 Train / Data**, choose seasons, and click **Update dataset & retrain** to build `models/model.joblib`.
-
-> **Tip:** You can also store `model.joblib` in the repo (large file warning), but the standard flow is to build on first boot.
-
----
-
 ## 📊 Training & Evaluation
 
 - **Split:** Time-based split on features parquet (train past → test future).
@@ -139,42 +124,6 @@ laliga_predictor_starter/
 - **Seeded Elo**: Assign reasonable priors to avoid extreme 0/1 probability artifacts.
 - **Back-filled rolling form**: Use league averages / conservative priors until enough matches are available.
 - **Result**: More stable early-season predictions for promoted clubs.
-
----
-
-## 🧰 Common commands
-
-```bash
-# Rebuild features from CLI (optional; the UI can do this)
-python -m src.features
-
-# Train model bundle from CLI (optional; the UI can do this)
-python -m src.train_model
-```
-
----
-
-## 🧯 Troubleshooting
-
-- **`models/model.joblib` not found**  
-  → You must **train once** in **🧪 Train / Data** so the model bundle is created.
-
-- **“Team not found in team_state.parquet”**  
-  → Rebuild features (and ensure you trained on seasons that include those teams).
-
-- **NaN errors during training**  
-  → Clear processed data and rebuild:
-  ```bash
-  rm -rf data/processed
-  mkdir -p data/processed
-  python -m src.features
-  python -m src.train_model
-  ```
-
-- **Odds fetch returns nothing**  
-  → Check `ODDS_API_KEY` and that the fixture exists in the API window (the UI shows quota and lets you inspect upcoming fixtures).
-
----
 
 ## 🔒 Notes & Limitations
 
