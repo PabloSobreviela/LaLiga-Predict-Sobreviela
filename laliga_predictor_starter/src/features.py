@@ -1,14 +1,18 @@
 # src/features.py
-# Build training features and a per-team snapshot for inference.
-# Writes:
-#   - data/processed/features.parquet (row = match)
-#   - data/processed/team_state.parquet (row = team, latest)
-#
-# Safe to call from Streamlit or CLI:
-#   python -m src.features
+"""
+Builds processed datasets for the LaLiga predictor.
+
+Outputs (under CONFIG['processed_data_path']):
+- matches.parquet            : match-level raw (wide) table
+- long_teams.parquet         : per-team, per-match long table with rolling metrics
+- elo_history.parquet        : per-team Elo by match date
+- features_train.parquet     : training rows with engineered features + label
+- team_state.parquet         : latest per-team snapshot used by the app's UI
+"""
 
 from __future__ import annotations
-import os
+
+import math
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
 
@@ -17,437 +21,287 @@ import pandas as pd
 
 from src.config import CONFIG
 
-# --- Safety helpers ---
-def ensure_cols(df, cols, fill_val=np.nan):
-    for c in cols:
-        if c not in df.columns:
-            df[c] = fill_val
-    return df
+DATA_RAW = Path(CONFIG["raw_data_path"])
+DATA_PROC = Path(CONFIG["processed_data_path"])
 
-def alias_if_missing(df, src, dst):
-    if src in df.columns and dst not in df.columns:
-        df[dst] = df[src]
-    return df
+# ------------------------------- IO helpers -------------------------------
 
+def _raw_path_for(season_code: str) -> Path:
+    # football-data.co.uk dump is expected to have been saved as e.g. "laliga_2324.csv"
+    return DATA_RAW / f"{CONFIG['league']}_{season_code}.csv"
 
-RAW_DIR = Path(CONFIG["raw_data_path"])
-PROC_DIR = Path(CONFIG["processed_data_path"])
-LEAGUE = CONFIG.get("league", "SP1")
+def _read_raw_csv(path: Path) -> pd.DataFrame:
+    # football-data columns vary a bit by year; we standardize right away
+    df = pd.read_csv(path)
+    # Try common column names
+    col_map_candidates = [
+        # (Home team, Away team, Home goals, Away goals, Result, Date, HST, AST)
+        ("HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR", "Date", "HST", "AST"),
+        ("Home",     "Away",     "FTHG", "FTAG", "FTR", "Date", "HST", "AST"),
+    ]
+    use_map = None
+    for hm, am, hg, ag, res, date, hst, ast in col_map_candidates:
+        if hm in df.columns and am in df.columns and hg in df.columns and ag in df.columns and res in df.columns:
+            use_map = (hm, am, hg, ag, res, date if date in df.columns else None,
+                       hst if hst in df.columns else None,
+                       ast if ast in df.columns else None)
+            break
+    if use_map is None:
+        raise KeyError(f"Could not find expected football-data columns in {path.name}")
 
-# ----------------------------
-# Utilities
-# ----------------------------
-def _season_codes_default() -> List[str]:
-    # Extend if you want; app passes explicit selections anyway.
-    return ["2122", "2223", "2324", "2425", "2526"]
+    hm, am, hg, ag, res, date, hst, ast = use_map
+    out = pd.DataFrame({
+        "Date": pd.to_datetime(df[date]) if date else pd.to_datetime(df.index, unit="D", origin="unix", errors="ignore"),
+        "Home": df[hm].astype(str),
+        "Away": df[am].astype(str),
+        "FTHG": pd.to_numeric(df[hg], errors="coerce"),
+        "FTAG": pd.to_numeric(df[ag], errors="coerce"),
+        "FTR":  df[res].astype(str),
+    })
+    out["HST"] = pd.to_numeric(df[hst], errors="coerce") if hst else np.nan
+    out["AST"] = pd.to_numeric(df[ast], errors="coerce") if ast else np.nan
 
-def _load_one_csv(season: str) -> Optional[pd.DataFrame]:
-    fp = RAW_DIR / f"{LEAGUE}_{season}.csv"
-    if not fp.exists():
-        return None
-    df = pd.read_csv(fp)
-    # Normalize column names we use
-    # Football-data columns we rely on:
-    #   Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HST, AST
-    rename_map = {}
-    cols = {c.lower(): c for c in df.columns}
-    # Normalize common variants (rare)
-    if "hometeam" not in cols and "home" in cols: rename_map[cols["home"]] = "HomeTeam"
-    if "awayteam" not in cols and "away" in cols: rename_map[cols["away"]] = "AwayTeam"
-    if "hst" not in cols and "hson" in cols: rename_map[cols["hson"]] = "HST"
-    if "ast" not in cols and "ason" in cols: rename_map[cols["ason"]] = "AST"
+    # Normalize FTR to H/D/A if some seasons use other tokens
+    out["FTR"] = out["FTR"].map({"H":"H","D":"D","A":"A"}).fillna(
+        np.where(out["FTHG"]>out["FTAG"], "H",
+        np.where(out["FTHG"]<out["FTAG"], "A", "D"))
+    )
+    return out.sort_values("Date").reset_index(drop=True)
 
-    # Apply renames if any
-    if rename_map:
-        df = df.rename(columns=rename_map)
+# ------------------------------- Elo utils --------------------------------
 
-    # Parse Date (football-data is dd/mm/yy or dd/mm/yyyy)
-    if "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
-    else:
-        # If missing, create a monotonic date (very unlikely)
-        df["Date"] = pd.date_range("2000-01-01", periods=len(df), freq="D")
+def _logistic_expectation(elo_a: float, elo_b: float, home_adv: float = 60.0) -> float:
+    """Expected score for home side vs away."""
+    return 1.0 / (1.0 + 10 ** (-( (elo_a + home_adv) - elo_b) / 400.0))
 
-    # Keep only rows with valid teams
-    need_cols = ["HomeTeam", "AwayTeam"]
-    for c in need_cols:
-        if c not in df.columns:
-            # If catastrophically missing, bail on this season
-            return None
-    df = df.dropna(subset=["HomeTeam", "AwayTeam"]).copy()
+def _update_elo_once(elo_h: float, elo_a: float, result: str, k: float = 22.0, home_adv: float = 60.0) -> Tuple[float, float]:
+    # result: "H"/"D"/"A"
+    exp_home = _logistic_expectation(elo_h, elo_a, home_adv=home_adv)
+    score_home = 1.0 if result == "H" else 0.5 if result == "D" else 0.0
+    delta = k * (score_home - exp_home)
+    return elo_h + delta, elo_a - delta
 
-    # Ensure SOT exists (fill with NaN if absent -> becomes 0 later in rolling means)
-    for c in ["HST", "AST"]:
-        if c not in df.columns:
-            df[c] = np.nan
-
-    # Ensure goals/label exist (training can derive FTR if missing)
-    for c in ["FTHG", "FTAG", "FTR"]:
-        if c not in df.columns:
-            df[c] = np.nan
-
-    df["Season"] = season
-    return df
-
-def load_raw(seasons: Optional[List[str]] = None) -> pd.DataFrame:
-    if seasons is None:
-        seasons = _season_codes_default()
-    frames = []
-    for s in seasons:
-        one = _load_one_csv(s)
-        if one is not None and len(one):
-            frames.append(one)
-    if not frames:
-        return pd.DataFrame()
-    out = pd.concat(frames, ignore_index=True)
-    out = out.sort_values("Date").reset_index(drop=True)
-    return out
-
-# ----------------------------
-# Simple Elo implementation
-# ----------------------------
-def _elo_expected(rA: float, rB: float, hfa: float = 60.0, is_homeA: bool = True) -> float:
-    # Add home-field advantage to home team rating
-    rA_eff = rA + (hfa if is_homeA else 0.0)
-    rB_eff = rB + (0.0 if is_homeA else hfa)
-    return 1.0 / (1.0 + 10 ** ((rB_eff - rA_eff) / 400.0))
-
-def _elo_update(rA: float, rB: float, scoreA: float, K: float, hfa: float, is_homeA: bool) -> Tuple[float, float]:
-    expA = _elo_expected(rA, rB, hfa=hfa, is_homeA=is_homeA)
-    rA_new = rA + K * (scoreA - expA)
-    # scoreB = 1 - scoreA
-    expB = _elo_expected(rB, rA, hfa=hfa, is_homeA=(not is_homeA))
-    rB_new = rB + K * ((1.0 - scoreA) - expB)
-    return rA_new, rB_new
-
-def compute_elo_timeseries(matches: pd.DataFrame,
-                           base_rating: float = 1500.0,
-                           K: float = 22.0,
-                           hfa: float = 60.0) -> pd.DataFrame:
+def compute_elo_history(matches: pd.DataFrame,
+                        base_rating: float = 1500.0,
+                        k: float = 22.0,
+                        home_adv: float = 60.0) -> pd.DataFrame:
     """
-    Input: matches sorted by Date. Expects columns: Date, HomeTeam, AwayTeam, FTR or (FTHG,FTAG)
-    Returns long frame: columns=['Date','Team','elo']
+    Returns long table with per-team Elo over time:
+    columns: [Date, Team, elo]
     """
-    if matches.empty:
-        return pd.DataFrame(columns=["Date","Team","elo"])
-
-    ratings: Dict[str, float] = {}
-    rows: List[Tuple[pd.Timestamp, str, float]] = []
-
-    def _result_to_score(ftr: str, fthg: float, ftag: float) -> float:
-        # Return 1/0.5/0 for home team
-        if isinstance(ftr, str) and ftr in {"H","D","A"}:
-            return {"H":1.0, "D":0.5, "A":0.0}[ftr]
-        # Fallback via goals
-        if pd.notna(fthg) and pd.notna(ftag):
-            if fthg > ftag: return 1.0
-            if fthg < ftag: return 0.0
-            return 0.5
-        # Unknown, treat as draw-ish (minimal movement)
-        return 0.5
-
+    elos: Dict[str, float] = {}
+    rows = []
     for _, r in matches.iterrows():
-        h, a = r["HomeTeam"], r["AwayTeam"]
-        d = r["Date"]
-        ftr = r.get("FTR", np.nan)
-        fthg = r.get("FTHG", np.nan)
-        ftag = r.get("FTAG", np.nan)
-
-        rH = ratings.get(h, base_rating)
-        rA = ratings.get(a, base_rating)
-
-        score_home = _result_to_score(ftr, fthg, ftag)
-
-        # Log pre-update ratings (snapshot before match)
-        rows.append((d, h, rH))
-        rows.append((d, a, rA))
-
-        # Update
-        rH_new, rA_new = _elo_update(rH, rA, score_home, K=K, hfa=hfa, is_homeA=True)
-        ratings[h] = rH_new
-        ratings[a] = rA_new
-
-    elo_df = pd.DataFrame(rows, columns=["Date","Team","elo"])
-    # Keep last seen per date; groupby last then cummax by date works, but we just keep as-is sorted
+        h, a, res, date = r["Home"], r["Away"], r["FTR"], r["Date"]
+        eh = elos.get(h, base_rating)
+        ea = elos.get(a, base_rating)
+        new_h, new_a = _update_elo_once(eh, ea, res, k=k, home_adv=home_adv)
+        elos[h], elos[a] = new_h, new_a
+        rows.append((date, h, new_h))
+        rows.append((date, a, new_a))
+    elo_df = pd.DataFrame(rows, columns=["Date","Team","elo"]).sort_values(["Team","Date"]).reset_index(drop=True)
     return elo_df
 
-# ----------------------------
-# Long-format for rolling pre-match features
-# ----------------------------
-def make_long_frame(df: pd.DataFrame) -> pd.DataFrame:
-    # For each match, make two rows (home perspective & away perspective)
-    # Keep only columns we need and coerce to numeric as needed.
-    keep = ["Date","HomeTeam","AwayTeam","FTHG","FTAG","HST","AST","Season"]
-    for c in keep:
-        if c not in df.columns:
-            df[c] = np.nan
-    tmp = df[keep].copy()
+# ------------------------- Rolling features (long) -------------------------
 
-    home_part = pd.DataFrame({
-        "Date": tmp["Date"],
-        "Team": tmp["HomeTeam"],
-        "Opponent": tmp["AwayTeam"],
-        "is_home": True,
-        "GF": pd.to_numeric(tmp["FTHG"], errors="coerce"),
-        "GA": pd.to_numeric(tmp["FTAG"], errors="coerce"),
-        "SOT_for": pd.to_numeric(tmp["HST"], errors="coerce"),
-        "SOT_against": pd.to_numeric(tmp["AST"], errors="coerce"),
-        "Season": tmp["Season"]
-    })
-    away_part = pd.DataFrame({
-        "Date": tmp["Date"],
-        "Team": tmp["AwayTeam"],
-        "Opponent": tmp["HomeTeam"],
-        "is_home": False,
-        "GF": pd.to_numeric(tmp["FTAG"], errors="coerce"),
-        "GA": pd.to_numeric(tmp["FTHG"], errors="coerce"),
-        "SOT_for": pd.to_numeric(tmp["AST"], errors="coerce"),
-        "SOT_against": pd.to_numeric(tmp["HST"], errors="coerce"),
-        "Season": tmp["Season"]
-    })
-    long = pd.concat([home_part, away_part], ignore_index=True)
-    long = long.sort_values(["Team","Date"]).reset_index(drop=True)
-    return long
+def _build_long_team_table(matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    Long table with one row per team per match and rolling 'last N' features.
+    """
+    # Build long rows
+    home_rows = matches[["Date","Home","Away","FTHG","FTAG","HST","AST"]].copy()
+    home_rows.rename(columns={
+        "Home":"Team","Away":"Opp",
+        "FTHG":"goals_for","FTAG":"goals_against",
+        "HST":"sot_for","AST":"sot_against"
+    }, inplace=True)
+    home_rows["is_home"] = True
 
-def add_pre_match_rollups(long: pd.DataFrame, window: int = 5) -> pd.DataFrame:
-    # Compute rolling means *before* each match (shift by 1)
-    long = long.copy()
-    g = long.groupby("Team", group_keys=False)
+    away_rows = matches[["Date","Home","Away","FTHG","FTAG","HST","AST"]].copy()
+    away_rows.rename(columns={
+        "Away":"Team","Home":"Opp",
+        "FTAG":"goals_for","FTHG":"goals_against",
+        "AST":"sot_for","HST":"sot_against"
+    }, inplace=True)
+    away_rows["is_home"] = False
 
-    long["team_last_gf"]  = g["GF"].shift(1).rolling(window, min_periods=1).mean()
-    long["team_last_ga"]  = g["GA"].shift(1).rolling(window, min_periods=1).mean()
-    long["team_last_gd"]  = long["team_last_gf"] - long["team_last_ga"]
-    long["team_last_sot_for"]     = g["SOT_for"].shift(1).rolling(window, min_periods=1).mean()
-    long["team_last_sot_against"] = g["SOT_against"].shift(1).rolling(window, min_periods=1).mean()
+    long = pd.concat([home_rows[["Date","Team","Opp","is_home","goals_for","goals_against","sot_for","sot_against"]],
+                      away_rows[["Date","Team","Opp","is_home","goals_for","goals_against","sot_for","sot_against"]]],
+                     ignore_index=True).sort_values(["Team","Date"]).reset_index(drop=True)
 
-    # Rest days since last match
-    long["prev_date"] = g["Date"].shift(1)
-    long["team_rest_days"] = (long["Date"] - long["prev_date"]).dt.days
-    long["team_rest_days"] = long["team_rest_days"].fillna(long["team_rest_days"].median())
+    long["gd"] = long["goals_for"] - long["goals_against"]
+
+    # rest days
+    long["prev_date"] = long.groupby("Team")["Date"].shift(1)
+    long["rest_days"] = (long["Date"] - long["prev_date"]).dt.days.astype("float")
+    long["rest_days"] = long["rest_days"].fillna(long["rest_days"].median())
+
+    # rolling windows
+    for w in (5,):
+        long[f"last{w}_gf"]  = long.groupby("Team")["goals_for"].rolling(w, min_periods=1).mean().reset_index(level=0, drop=True)
+        long[f"last{w}_ga"]  = long.groupby("Team")["goals_against"].rolling(w, min_periods=1).mean().reset_index(level=0, drop=True)
+        long[f"last{w}_gd"]  = long.groupby("Team")["gd"].rolling(w, min_periods=1).mean().reset_index(level=0, drop=True)
+        long[f"last{w}_sotf"] = long.groupby("Team")["sot_for"].rolling(w, min_periods=1).mean().reset_index(level=0, drop=True)
+        long[f"last{w}_sota"] = long.groupby("Team")["sot_against"].rolling(w, min_periods=1).mean().reset_index(level=0, drop=True)
+
     long = long.drop(columns=["prev_date"])
     return long
 
-# ----------------------------
-# Feature assembly
-# ----------------------------
-def assemble_match_features(df: pd.DataFrame,
-                            long: pd.DataFrame,
-                            elo_df: pd.DataFrame) -> pd.DataFrame:
+# ----------------------- Match-level features (wide) -----------------------
+
+def assemble_match_features(matches: pd.DataFrame, long: pd.DataFrame, elo_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Join pre-match rolling stats + Elo.
-    Produces:
-      home_last_* / away_last_* , home_rest_days / away_rest_days,
-      rest_days_home/rest_days_away (aliases),
-      elo_home/elo_away/elo_diff,
-      *_diff engineered features.
+    For each match row, join the 'pre-match' rolling stats for each team and the current Elo.
+    We use the previous row's rolling value via shift on long table.
     """
+    # Get "state as of before the match" by shifting by 1 per team
+    cols_keep = ["Date","Team","rest_days","last5_gf","last5_ga","last5_gd","last5_sotf","last5_sota"]
+    long_before = long.sort_values(["Team","Date"]).copy()
+    for c in cols_keep[2:]:
+        long_before[c] = long_before.groupby("Team")[c].shift(1)
+    long_before["rest_days"] = long_before["rest_days"].fillna(long_before["rest_days"].median())
+    long_before = long_before[cols_keep]
 
-    # --- columns we expect from the long table ---
-    pre_cols = [
-        "team_last_gf", "team_last_ga", "team_last_gd",
-        "team_last_sot_for", "team_last_sot_against",
-        "team_rest_days",
-    ]
-    # be robust if long is missing any expected columns
-    long = ensure_cols(long, pre_cols, fill_val=np.nan)
+    # Prepare Elo "as-of previous"
+    elo_before = elo_df.sort_values(["Team","Date"]).copy()
+    elo_before["elo"] = elo_before.groupby("Team")["elo"].shift(1)  # pre-match elo
+    elo_before = elo_before.dropna(subset=["elo"])
 
-    long_pre = long[["Team", "Date"] + pre_cols].copy()
+    # Home merge
+    home_state = long_before.rename(columns={
+        "Team":"Home",
+        "rest_days":"rest_days_home",
+        "last5_gf":"home_last_gf",
+        "last5_ga":"home_last_ga",
+        "last5_gd":"home_last_gd",
+        "last5_sotf":"home_last_sot_for",
+        "last5_sota":"home_last_sot_against",
+    })
+    away_state = long_before.rename(columns={
+        "Team":"Away",
+        "rest_days":"rest_days_away",
+        "last5_gf":"away_last_gf",
+        "last5_ga":"away_last_ga",
+        "last5_gd":"away_last_gd",
+        "last5_sotf":"away_last_sot_for",
+        "last5_sota":"away_last_sot_against",
+    })
 
-    def _rename_for_side(prefix: str) -> dict:
-        mapping = {}
-        for c in pre_cols:
-            base = c[5:] if c.startswith("team_") else c
-            mapping[c] = f"{prefix}_{base}"  # e.g., home_last_gf, away_rest_days
-        return mapping
+    feats = matches.merge(home_state, on=["Date","Home"], how="left") \
+                   .merge(away_state, on=["Date","Away"], how="left")
 
-    # --- join for home side ---
-    home_join = long_pre.rename(columns=_rename_for_side("home")).rename(columns={"Team": "HomeTeam"})
-    df = df.merge(home_join, on=["HomeTeam", "Date"], how="left")
+    # Elo merges
+    elo_home = elo_before.rename(columns={"Team":"Home","elo":"elo_home"})
+    elo_away = elo_before.rename(columns={"Team":"Away","elo":"elo_away"})
+    feats = feats.merge(elo_home[["Date","Home","elo_home"]], on=["Date","Home"], how="left") \
+                 .merge(elo_away[["Date","Away","elo_away"]], on=["Date","Away"], how="left")
 
-    # --- join for away side ---
-    away_join = long_pre.rename(columns=_rename_for_side("away")).rename(columns={"Team": "AwayTeam"})
-    df = df.merge(away_join, on=["AwayTeam", "Date"], how="left")
+    # Derived
+    feats["elo_diff"]                = feats["elo_home"] - feats["elo_away"]
+    feats["form_gd_diff"]            = feats["home_last_gd"] - feats["away_last_gd"]
+    feats["form_sot_for_diff"]       = feats["home_last_sot_for"] - feats["away_last_sot_for"]
+    feats["form_sot_against_diff"]   = feats["home_last_sot_against"] - feats["away_last_sot_against"]
+    feats["rest_days_diff"]          = feats["rest_days_home"] - feats["rest_days_away"]
 
-    # --- Elo joins (pre-match Elo snapshot by (Team, Date)) ---
-    # Be robust: ensure expected columns exist
-    elo_df = ensure_cols(elo_df, ["Team", "Date", "elo"], fill_val=np.nan)
+    # Label safety
+    if "FTR" not in feats.columns or feats["FTR"].isna().all():
+        feats["FTR"] = np.where(feats["FTHG"] > feats["FTAG"], "H",
+                        np.where(feats["FTHG"] < feats["FTAG"], "A", "D"))
 
-    elo_home = elo_df.rename(columns={"Team": "HomeTeam", "elo": "elo_home"})
-    elo_away = elo_df.rename(columns={"Team": "AwayTeam", "elo": "elo_away"})
-    df = df.merge(elo_home, on=["HomeTeam", "Date"], how="left")
-    df = df.merge(elo_away, on=["AwayTeam", "Date"], how="left")
-    df["elo_diff"] = df["elo_home"] - df["elo_away"]
+    return feats
 
-    # --- make sure rest-day aliases exist for the app ---
-    df = alias_if_missing(df, "home_rest_days", "rest_days_home")
-    df = alias_if_missing(df, "away_rest_days", "rest_days_away")
-    df = ensure_cols(df, ["rest_days_home", "rest_days_away"], fill_val=np.nan)
+# ------------------------------- Public API -------------------------------
 
-    # --- engineered diffs (guard every input) ---
-    df = ensure_cols(df, [
+def build_features(seasons: Optional[List[str]] = None) -> None:
+    """
+    Main entry: read available raw CSVs for given seasons, build all processed artifacts.
+    """
+    DATA_PROC.mkdir(parents=True, exist_ok=True)
+
+    # 1) read raw
+    if seasons is None:
+        seasons = []
+        for p in DATA_RAW.glob(f"{CONFIG['league']}_*.csv"):
+            try:
+                seasons.append(p.stem.split("_")[-1])
+            except Exception:
+                pass
+        seasons = sorted(seasons)
+    frames = []
+    for s in seasons:
+        p = _raw_path_for(s)
+        if p.exists():
+            frames.append(_read_raw_csv(p))
+    if not frames:
+        raise FileNotFoundError("No raw CSVs found for requested seasons in data/raw")
+
+    matches = pd.concat(frames, ignore_index=True).sort_values("Date").reset_index(drop=True)
+    # Save raw-wide
+    matches.to_parquet(DATA_PROC / "matches.parquet", index=False)
+
+    # 2) long + elo
+    long = _build_long_team_table(matches)
+    long.to_parquet(DATA_PROC / "long_teams.parquet", index=False)
+
+    elo_df = compute_elo_history(matches)
+    elo_df.to_parquet(DATA_PROC / "elo_history.parquet", index=False)
+
+    # 3) match-level engineered features
+    feats = assemble_match_features(matches, long, elo_df)
+
+    # Minimal NA handling to keep training happy; model pipeline will impute again
+    feature_cols = [
+        "elo_home","elo_away","elo_diff",
+        "home_last_gf","away_last_gf",
+        "home_last_ga","away_last_ga",
         "home_last_gd","away_last_gd",
         "home_last_sot_for","away_last_sot_for",
         "home_last_sot_against","away_last_sot_against",
-    ], fill_val=0.0)
+        "rest_days_home","rest_days_away",
+        "form_gd_diff","form_sot_for_diff","form_sot_against_diff","rest_days_diff",
+    ]
+    for c in feature_cols:
+        if c not in feats.columns:
+            feats[c] = np.nan
+    feats[feature_cols] = feats[feature_cols].astype(float)
 
-    df["form_gd_diff"]           = df["home_last_gd"] - df["away_last_gd"]
-    df["form_sot_for_diff"]      = df["home_last_sot_for"] - df["away_last_sot_for"]
-    df["form_sot_against_diff"]  = df["home_last_sot_against"] - df["away_last_sot_against"]
-    df["rest_days_diff"]         = df["rest_days_home"] - df["rest_days_away"]
+    feats.to_parquet(DATA_PROC / "features_train.parquet", index=False)
 
-    return df
+    # 4) team_state snapshot (latest row per team, after last match)
+    last_date = matches["Date"].max()
+    # last known rolling values (no shift) for snapshot
+    snap_cols = ["Team","Date","rest_days","last5_gf","last5_ga","last5_gd","last5_sotf","last5_sota"]
+    latest_long = long.sort_values("Date").groupby("Team", as_index=False).last()[snap_cols]
 
-# ----------------------------
-# Robust Elo snapshot (fix for 'Team' missing)
-# ----------------------------
-def _maybe_promote_index_to_team(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    if "Team" in out.columns:
-        return out
-    # Index name is Team/Club?
-    if out.index.name and out.index.name.lower() in {"team", "club"}:
-        out = out.reset_index().rename(columns={out.index.name: "Team"})
-        return out
-    # Unnamed object index that looks like team names → promote
-    if out.index.dtype == "object":
-        sample = out.index[:5].tolist()
-        if all(isinstance(x, str) for x in sample):
-            out = out.reset_index().rename(columns={"index": "Team"})
-            return out
-    return out
+    latest_long.rename(columns={
+        "rest_days":"team_rest_days",
+        "last5_gf":"team_last_gf",
+        "last5_ga":"team_last_ga",
+        "last5_gd":"team_last_gd",
+        "last5_sotf":"team_last_sot_for",
+        "last5_sota":"team_last_sot_against",
+    }, inplace=True)
 
-def _robust_elo_snapshot(last_elo: pd.DataFrame, last_elo2: pd.DataFrame) -> pd.DataFrame:
-    cand = pd.concat([last_elo, last_elo2], ignore_index=False)
+    latest_elo = elo_df.sort_values("Date").groupby("Team", as_index=False).last()[["Team","elo"]]
 
-    cand = _maybe_promote_index_to_team(cand)
+    team_state = latest_long.merge(latest_elo, on="Team", how="left")
+    # If any NaNs remain (brand new teams etc.), fill with column medians
+    for c in ["team_rest_days","team_last_gf","team_last_ga","team_last_gd","team_last_sot_for","team_last_sot_against","elo"]:
+        if c in team_state.columns:
+            team_state[c] = pd.to_numeric(team_state[c], errors="coerce")
+            team_state[c] = team_state[c].fillna(team_state[c].median())
 
-    # Normalize likely variants
-    rename_map = {}
-    for c in cand.columns:
-        lc = c.lower()
-        if lc == "club" and "Team" not in cand.columns:
-            rename_map[c] = "Team"
-        elif lc == "team" and "Team" not in cand.columns:
-            rename_map[c] = "Team"
-        elif lc == "date" and "Date" not in cand.columns:
-            rename_map[c] = "Date"
-        elif lc == "elo" and "elo" not in cand.columns:
-            rename_map[c] = "elo"
-    cand = cand.rename(columns=rename_map)
+    team_state.to_parquet(DATA_PROC / "team_state.parquet", index=False)
 
-    # Fix Elo casing
-    if "elo" not in cand.columns:
-        for alt in ["Elo","ELO"]:
-            if alt in cand.columns:
-                cand = cand.rename(columns={alt:"elo"})
-                break
-
-    missing = [x for x in ["Team","elo"] if x not in cand.columns]
-    if missing:
-        preview = cand.head(5).to_dict(orient="list")
-        raise KeyError(
-            f"Expected columns {missing} in Elo snapshot; got columns={list(cand.columns)} "
-            f"(index name={cand.index.name!r}). Preview: {preview}"
-        )
-
-    if "Date" not in cand.columns:
-        cand["Date"] = pd.Timestamp("1970-01-01")
-
-    out = (
-        cand.sort_values("Date")
-            .drop_duplicates(subset=["Team"], keep="last")
-            [["Team","elo"]]
-            .reset_index(drop=True)
-    )
-    return out
-
-# ----------------------------
-# Public entry points
-# ----------------------------
-def build_features(seasons: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Build and persist features + team_state.
-    Returns (features_df, team_state_df)
-    """
-    df = load_raw(seasons)
-    if df.empty:
-        PROC_DIR.mkdir(parents=True, exist_ok=True)
-        # Write empty to keep downstream code predictable
-        features_fp = PROC_DIR / "features.parquet"
-        team_fp = PROC_DIR / "team_state.parquet"
-        pd.DataFrame().to_parquet(features_fp, index=False)
-        pd.DataFrame().to_parquet(team_fp, index=False)
-        return df, pd.DataFrame()
-
-    df = df.sort_values("Date").reset_index(drop=True)
-
-    # Long and pre features
-    long = make_long_frame(df)
-    long = add_pre_match_rollups(long, window=5)
-
-    # Elo time series (pre-update ratings logged each match)
-    elo_df = compute_elo_timeseries(df, base_rating=1500.0, K=22.0, hfa=60.0)
-
-    # Assemble per-match features
-    feats = assemble_match_features(df, long, elo_df)
-
-    # ------- Build team_state (latest snapshot per team) -------
-    # Take latest date seen overall
-    last_day = feats["Date"].max()
-
-    # Last per-team rolling stats on/just before last_day
-    long_latest = (
-        long.sort_values("Date")
-            .drop_duplicates(subset=["Team"], keep="last")
-            .loc[:, ["Team",
-                     "team_last_gf","team_last_ga","team_last_gd",
-                     "team_last_sot_for","team_last_sot_against",
-                     "team_rest_days"]]
-            .rename(columns={
-                "team_last_gf":"team_last_gf",
-                "team_last_ga":"team_last_ga",
-                "team_last_gd":"team_last_gd",
-                "team_last_sot_for":"team_last_sot_for",
-                "team_last_sot_against":"team_last_sot_against",
-                "team_rest_days":"team_rest_days",
-            })
-            .reset_index(drop=True)
-    )
-
-    # Last Elo per team — robust against 'Team' in index
-    elo_sorted = elo_df.sort_values("Date")
-    last_elo = elo_sorted.groupby("Team", as_index=False).last(numeric_only=True)
-    # Also try taking last on full frame in case of index issues (defensive)
-    last_elo2 = elo_sorted.set_index("Team").groupby(level=0).tail(1).reset_index()
-
-    elo_snap = _robust_elo_snapshot(last_elo, last_elo2)
-
-    team_state = pd.merge(elo_snap, long_latest, on="Team", how="outer")
-
-    # Persist
-    PROC_DIR.mkdir(parents=True, exist_ok=True)
-    (PROC_DIR / "features.parquet").write_bytes(b"")  # ensure file exists even if conversion fails
-    feats.to_parquet(PROC_DIR / "features.parquet", index=False)
-    team_state.to_parquet(PROC_DIR / "team_state.parquet", index=False)
-
-    print(f"Wrote {PROC_DIR/'features.parquet'} with shape={feats.shape}")
-    print(f"Wrote {PROC_DIR/'team_state.parquet'} with shape={team_state.shape}")
-    return feats, team_state
-
-
-def run_build_features(seasons: Optional[List[str]] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Alias used by app.py"""
+def run_build_features(seasons: Optional[List[str]] = None) -> None:
+    """Alias kept for backward-compat with some app versions."""
     return build_features(seasons=seasons)
 
+# ------------------------------ CLI support -------------------------------
 
 def main():
-    # CLI entry
-    seasons_env = os.environ.get("SEASONS", "")
-    seasons = None
-    if seasons_env:
-        seasons = [s.strip() for s in seasons_env.split(",") if s.strip()]
-    build_features(seasons=seasons)
-
+    # If run as a script: build for whatever raw CSVs are present.
+    build_features()
 
 if __name__ == "__main__":
     main()
