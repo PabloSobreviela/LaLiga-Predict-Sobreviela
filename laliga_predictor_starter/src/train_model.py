@@ -1,154 +1,115 @@
 # src/train_model.py
+"""
+Train a multinomial logistic regression with a robust, imputed pipeline.
+Saves bundle to CONFIG['model_path'] containing:
+- pipeline
+- feature_order
+- feature_means (for app vector defaults)
+- meta
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Dict, Tuple
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-from pathlib import Path
-from typing import Tuple, Dict, List
-
-from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, log_loss
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from src.config import CONFIG
 
 DATA_PROC = Path(CONFIG["processed_data_path"])
 MODEL_PATH = Path(CONFIG["model_path"])
 
+# Features used by the app when building the single-row vector
+FEATURE_ORDER = [
+    "elo_home","elo_away","elo_diff",
+    "home_last_gf","away_last_gf",
+    "home_last_ga","away_last_ga",
+    "home_last_gd","away_last_gd",
+    "home_last_sot_for","away_last_sot_for",
+    "home_last_sot_against","away_last_sot_against",
+    "rest_days_home","rest_days_away",
+    "form_gd_diff","form_sot_for_diff","form_sot_against_diff","rest_days_diff",
+]
 
 def _ensure_labels(df: pd.DataFrame) -> pd.Series:
     """
-    Return a Series of integer labels {H:0, D:1, A:2}.
-    Prefer 'FTR' if present; otherwise derive from goals.
+    Ensure we have a categorical label in H/D/A; accept FTR or derive from goals.
     """
-    if "FTR" in df.columns:
-        y = df["FTR"].map({"H": 0, "D": 1, "A": 2})
-        if y.isna().any():
-            raise KeyError("FTR has unexpected values; expected only H/D/A.")
-        return y.astype(int)
-
-    if {"FTHG", "FTAG"}.issubset(df.columns):
-        # derive:
-        res = np.where(
-            df["FTHG"].values > df["FTAG"].values, 0,
-            np.where(df["FTHG"].values < df["FTAG"].values, 2, 1)
-        )
-        return pd.Series(res, index=df.index, name="FTR_derived").astype(int)
-
-    raise KeyError("No label found. Need 'FTR' (H/D/A), or 'FTHG' & 'FTAG' to derive it.")
-
-
-def _select_features(df: pd.DataFrame) -> List[str]:
-    """
-    Choose model features from features.parquet.
-    Exclude identifiers / labels; keep numeric columns only.
-    """
-    exclude = {"FTR", "FTHG", "FTAG", "HomeTeam", "AwayTeam", "Date"}
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    feats = [c for c in numeric_cols if c not in exclude]
-    if not feats:
-        raise ValueError("No numeric feature columns found after exclusion.")
-    return feats
-
-
-def _build_pipeline() -> Pipeline:
-    """
-    Impute NaNs (median) → scale → multinomial logistic.
-    This is the key change that fixes the NaN crash.
-    """
-    return Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler(with_mean=True)),
-        ("clf", LogisticRegression(
-            multi_class="multinomial",  # new sklearn defaults to this soon
-            solver="lbfgs",
-            max_iter=2000,
-            random_state=42,
-        )),
-    ])
-
-
-def _time_split(df: pd.DataFrame, test_frac: float = 0.2) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Chronological split to simulate forward-in-time evaluation.
-    """
-    if "Date" not in df.columns:
-        raise KeyError("Expected 'Date' column to do time split.")
-    dfx = df.sort_values("Date").reset_index(drop=True)
-    n = len(dfx)
-    cut = max(1, int(n * (1 - test_frac)))
-    return dfx.iloc[:cut].copy(), dfx.iloc[cut:].copy()
-
+    if "FTR" in df.columns and df["FTR"].notna().any():
+        y = df["FTR"].map({"H":0,"D":1,"A":2})
+        if y.notna().any():
+            return y.astype(int)
+    # derive if needed
+    if "FTHG" in df.columns and "FTAG" in df.columns:
+        y = np.where(df["FTHG"]>df["FTAG"], 0, np.where(df["FTHG"]<df["FTAG"], 2, 1))
+        return pd.Series(y, index=df.index)
+    raise KeyError("No label found. Need FTR or (FTHG/FTAG).")
 
 def train() -> Tuple[float, float, Dict]:
     """
-    Trains the model, evaluates on a time split, and saves the bundle.
-
-    Returns:
-        (accuracy, logloss, meta_dict)
+    Train the model and write a bundle to models/model.joblib
+    Returns: (accuracy, logloss, meta)
     """
-    feats_fp = DATA_PROC / "features.parquet"
-    if not feats_fp.exists():
-        raise FileNotFoundError(f"{feats_fp} not found. Run feature builder first.")
+    feats_path = DATA_PROC / "features_train.parquet"
+    if not feats_path.exists():
+        raise FileNotFoundError(f"{feats_path} not found. Build features first.")
 
-    df = pd.read_parquet(feats_fp)
+    df = pd.read_parquet(feats_path)
 
-    # labels
-    y_series = _ensure_labels(df)
+    # Keep only rows with targets available
+    y = _ensure_labels(df)
+    X = df[FEATURE_ORDER].copy()
 
-    # features
-    feature_cols = _select_features(df)
-    X = df[feature_cols].copy()
+    # Build pipeline: impute -> scale -> multinomial logistic regression
+    numeric = FEATURE_ORDER
+    pre = ColumnTransformer(
+        transformers=[("num", SimpleImputer(strategy="median"), numeric)],
+        remainder="drop"
+    )
+    clf = LogisticRegression(
+        multi_class="multinomial",
+        solver="lbfgs",
+        max_iter=2000,
+        n_jobs=None
+    )
+    pipe = Pipeline([
+        ("pre", pre),
+        ("scaler", StandardScaler(with_mean=True, with_std=True)),
+        ("logreg", clf),
+    ])
 
-    # time split
-    train_df, test_df = _time_split(df, test_frac=0.2)
-    y_train = _ensure_labels(train_df)
-    y_test = _ensure_labels(test_df)
+    # Split
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-    X_train = train_df[feature_cols].copy()
-    X_test = test_df[feature_cols].copy()
-
-    # pipeline with imputation
-    pipe = _build_pipeline()
     pipe.fit(X_train, y_train)
 
-    # evaluate
-    y_pred = pipe.predict(X_test)
-    y_proba = pipe.predict_proba(X_test)
+    # Evaluate
+    yhat = pipe.predict(X_val)
+    yproba = pipe.predict_proba(X_val)
+    acc = float(accuracy_score(y_val, yhat))
+    ll = float(log_loss(y_val, yproba))
 
-    acc = float(accuracy_score(y_test, y_pred))
-    try:
-        ll = float(log_loss(y_test, y_proba))
-    except ValueError:
-        # log_loss can fail if a class missing in y_test; handle gracefully
-        # in that case compute with labels argument:
-        ll = float(log_loss(y_test, y_proba, labels=[0, 1, 2]))
-
-    # feature means (for app's cold-start vector fill)
-    feature_means = X_train.mean(numeric_only=True).to_dict()
-
-    meta = {
-        "accuracy_time_split": acc,
-        "logloss_time_split": ll,
-        "n_train": int(len(train_df)),
-        "n_test": int(len(test_df)),
-        "features": feature_cols,
-        "model": "SimpleImputer(median) → StandardScaler → LogisticRegression(multinomial, lbfgs)",
-    }
-
+    # Save bundle
+    feature_means = {c: float(pd.to_numeric(X[c], errors="coerce").dropna().mean()) for c in FEATURE_ORDER}
     bundle = {
         "pipeline": pipe,
-        "feature_order": feature_cols,
+        "feature_order": FEATURE_ORDER,
         "feature_means": feature_means,
-        "meta": meta,
+        "meta": {"acc_val": acc, "logloss_val": ll},
     }
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, MODEL_PATH)
 
-    print(f"Time-split Accuracy: {acc:.3f} | LogLoss: {ll:.3f} | Features: {len(feature_cols)}")
-    return acc, ll, meta
-
-
-if __name__ == "__main__":
-    train()
+    return acc, ll, bundle["meta"]
