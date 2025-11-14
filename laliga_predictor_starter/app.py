@@ -430,7 +430,11 @@ with tab_predict:
             icon="ℹ️",
         )
         st.markdown("</div>", unsafe_allow_html=True)
-        st.stop()
+    else:
+        # ... keep the rest of the Predict UI exactly as you have it:
+        # match selectors, options toggle, market odds card, Predict button, chart, etc.
+        # (All the existing code that was below this point stays inside this `else:`)
+
 
     # Card: Match & Options
     col_left, col_right = st.columns([1, 1])
@@ -634,3 +638,4 @@ There is also an option to merge betting odds with the prediction via The Odds A
 Thank you for using the program!
 """)
     st.markdown("</div>", unsafe_allow_html=True)
+
