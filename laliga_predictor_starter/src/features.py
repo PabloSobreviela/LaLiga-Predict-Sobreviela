@@ -220,21 +220,35 @@ def _rolling_team_form(fixtures: pd.DataFrame, window: int = 5) -> pd.DataFrame:
         fthg = r["FTHG"]; ftag = r["FTAG"]; hst = r["HST"]; ast = r["AST"]
         rows.append({"Date": d, "Team": h, "gf": fthg, "ga": ftag, "sot_for": hst, "sot_against": ast})
         rows.append({"Date": d, "Team": a, "gf": ftag, "ga": fthg, "sot_for": ast, "sot_against": hst})
-    long = pd.DataFrame(rows).sort_values(["Team","Date"]).reset_index(drop=True)
 
-    # rolling means prior to the current match: use shift(1)
-    long["gf_roll"]  = long.groupby("Team")["gf"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean())
-    long["ga_roll"]  = long.groupby("Team")["ga"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean())
-    long["sf_roll"]  = long.groupby("Team")["sot_for"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean())
-    long["sa_roll"]  = long.groupby("Team")["sot_against"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean())
-    long["gd_roll"]  = long["gf_roll"] - long["ga_roll"]
+    long = pd.DataFrame(rows).sort_values(["Team", "Date"]).reset_index(drop=True)
 
-    # pivot back to fixture rows (home/away)
+    # Use transform (not apply) so the result aligns with long's index
+    def _roll_mean_shifted(s: pd.Series) -> pd.Series:
+        return s.shift(1).rolling(window, min_periods=1).mean()
+
+    long["gf_roll"] = (
+        long.groupby("Team", sort=False)["gf"]
+            .transform(_roll_mean_shifted)
+    )
+    long["ga_roll"] = (
+        long.groupby("Team", sort=False)["ga"]
+            .transform(_roll_mean_shifted)
+    )
+    long["sf_roll"] = (
+        long.groupby("Team", sort=False)["sot_for"]
+            .transform(_roll_mean_shifted)
+    )
+    long["sa_roll"] = (
+        long.groupby("Team", sort=False)["sot_against"]
+            .transform(_roll_mean_shifted)
+    )
+    long["gd_roll"] = long["gf_roll"] - long["ga_roll"]
+
+    # Helper to pick a team’s value at a given date (there’s exactly one row)
     def _pick(team, date, col):
-        # pick row for (team,date)
-        m = (long["Team"]==team) & (long["Date"]==date)
-        v = long.loc[m, col]
-        return v.iloc[0] if len(v) else np.nan
+        v = long.loc[(long["Team"] == team) & (long["Date"] == date), col]
+        return v.iloc[0] if not v.empty else np.nan
 
     res = {
         "home_last_gf": [], "home_last_ga": [], "home_last_sot_for": [], "home_last_sot_against": [], "home_last_gd": [],
@@ -242,20 +256,19 @@ def _rolling_team_form(fixtures: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     }
     for _, r in fixtures.iterrows():
         d = r["Date"]; h = r["HomeTeam"]; a = r["AwayTeam"]
-        res["home_last_gf"].append(_pick(h,d,"gf_roll"))
-        res["home_last_ga"].append(_pick(h,d,"ga_roll"))
-        res["home_last_sot_for"].append(_pick(h,d,"sf_roll"))
-        res["home_last_sot_against"].append(_pick(h,d,"sa_roll"))
-        res["home_last_gd"].append(_pick(h,d,"gd_roll"))
+        res["home_last_gf"].append(_pick(h, d, "gf_roll"))
+        res["home_last_ga"].append(_pick(h, d, "ga_roll"))
+        res["home_last_sot_for"].append(_pick(h, d, "sf_roll"))
+        res["home_last_sot_against"].append(_pick(h, d, "sa_roll"))
+        res["home_last_gd"].append(_pick(h, d, "gd_roll"))
 
-        res["away_last_gf"].append(_pick(a,d,"gf_roll"))
-        res["away_last_ga"].append(_pick(a,d,"ga_roll"))
-        res["away_last_sot_for"].append(_pick(a,d,"sf_roll"))
-        res["away_last_sot_against"].append(_pick(a,d,"sa_roll"))
-        res["away_last_gd"].append(_pick(a,d,"gd_roll"))
+        res["away_last_gf"].append(_pick(a, d, "gf_roll"))
+        res["away_last_ga"].append(_pick(a, d, "ga_roll"))
+        res["away_last_sot_for"].append(_pick(a, d, "sf_roll"))
+        res["away_last_sot_against"].append(_pick(a, d, "sa_roll"))
+        res["away_last_gd"].append(_pick(a, d, "gd_roll"))
 
     return pd.DataFrame(res)
-
 
 def _finalize_team_state(fixtures: pd.DataFrame,
                          elo_snap: pd.DataFrame,
