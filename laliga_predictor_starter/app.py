@@ -564,7 +564,8 @@ This project is a LaLiga Match predictor. It trains a logistic model on past sea
 bookmaker odds (via The Odds API). Cold-start handling lets you predict for newly promoted teams using league-average
 form plus a reasonable Elo baseline.
 
-[INSERT TEXT HERE] — replace this paragraph with your own description, screenshots, or methodology.
+Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
