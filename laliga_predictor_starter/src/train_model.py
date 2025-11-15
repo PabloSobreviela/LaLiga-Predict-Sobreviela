@@ -1,4 +1,4 @@
-# src/train_model.py — robust trainer with auto feature build and label fallback
+# src/train_model.py — robust trainer with auto feature build and label fallbackhttps://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela/blob/main/laliga_predictor_starter/src/train_model.py
 
 from __future__ import annotations
 from pathlib import Path
