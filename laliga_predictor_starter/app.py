@@ -302,18 +302,43 @@ def normalize_probs_from_odds(oh: float, od: float, oa: float):
     s = raw.sum()
     probs = raw / s if s > 0 else raw
     return probs.tolist(), s
-
+    
 def predict_proba_HDA(pipe, X_df: pd.DataFrame) -> np.ndarray:
+    """
+    Return probabilities in H/D/A order regardless of how the model stores classes_.
+    Works if classes_ are [0,1,2], ['0','1','2'], or ['H','D','A'].
+    """
     proba = pipe.predict_proba(X_df)
+    n_classes = proba.shape[1]
+
+    # Get classes from pipeline or final estimator
     classes = getattr(pipe, "classes_", None)
     if classes is None:
         try:
             classes = pipe[-1].classes_
         except Exception:
-            classes = [0, 1, 2]
-    idx_map = {int(c): i for i in classes}
-    ordered = np.stack([proba[:, idx_map.get(0,0)], proba[:, idx_map.get(1,1)], proba[:, idx_map.get(2,2)]], axis=1)
+            classes = list(range(n_classes))
+
+    # Build a generic label->index map
+    label_to_idx = {classes[i]: i for i in range(len(classes))}
+
+    def _find_idx(*candidates, default=0):
+        """Pick the first class label that exists; otherwise return default index within bounds."""
+        for c in candidates:
+            if c in label_to_idx:
+                return label_to_idx[c]
+        # if nothing matched, clamp default to valid range
+        return max(0, min(default, n_classes - 1))
+
+    # Try semantic labels first ('H','D','A'), then integer 0/1/2, then string '0'/'1'/'2'
+    idx_H = _find_idx('H', 0, '0', default=0)
+    idx_D = _find_idx('D', 1, '1', default=min(1, n_classes - 1))
+    idx_A = _find_idx('A', 2, '2', default=min(2, n_classes - 1))
+
+    # Reorder columns into H, D, A
+    ordered = np.stack([proba[:, idx_H], proba[:, idx_D], proba[:, idx_A]], axis=1)
     return ordered
+
 
 def run_build_features(seasons: Optional[List[str]] = None):
     if hasattr(F, "build_features"):
@@ -542,3 +567,4 @@ form plus a reasonable Elo baseline.
 [INSERT TEXT HERE] — replace this paragraph with your own description, screenshots, or methodology.
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
