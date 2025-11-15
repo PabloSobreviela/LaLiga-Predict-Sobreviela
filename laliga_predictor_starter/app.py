@@ -258,7 +258,6 @@ def _ts_value(ts: pd.DataFrame, team: str, col: str, default: float = 0.0) -> fl
         if team in ts.index:
             v = ts.loc[team, col]
             if pd.notnull(v): return float(v)
-        # league average fallback
         v = pd.to_numeric(ts[col], errors="coerce").mean()
         if pd.notnull(v): return float(v)
     return float(default)
@@ -274,7 +273,6 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
     if "elo_away" in row.index: row["elo_away"] = elo_away
     if "elo_diff" in row.index: row["elo_diff"] = elo_home - elo_away
 
-    # Recent form mapped from team_state → feature row
     mapping = {
         "team_last_gf": ("home_last_gf", "away_last_gf"),
         "team_last_ga": ("home_last_ga", "away_last_ga"),
@@ -287,7 +285,6 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
         if hcol in row.index: row[hcol] = _ts_value(ts, home, tcol, 0.0)
         if acol in row.index: row[acol] = _ts_value(ts, away, tcol, 0.0)
 
-    # Diffs if present
     if "form_gd_diff" in row.index:
         row["form_gd_diff"] = row.get("home_last_gd", 0.0) - row.get("away_last_gd", 0.0)
     if "form_sot_for_diff" in row.index:
@@ -297,9 +294,7 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
     if "rest_days_diff" in row.index:
         row["rest_days_diff"] = row.get("rest_days_home", 0.0) - row.get("rest_days_away", 0.0)
 
-    # Ensure no NaNs are left
     row = row.fillna(0.0)
-
     return pd.DataFrame([row.values], columns=feature_order)
 
 def normalize_probs_from_odds(oh: float, od: float, oa: float):
@@ -309,15 +304,9 @@ def normalize_probs_from_odds(oh: float, od: float, oa: float):
     return probs.tolist(), s
 
 def predict_proba_HDA(pipe, X_df: pd.DataFrame) -> np.ndarray:
-    """
-    Always return probabilities in [H, D, A] order, even if the estimator's
-    internal class_ order differs. Expects a DataFrame with correct columns.
-    """
     proba = pipe.predict_proba(X_df)
-    # Figure out estimator classes order
     classes = getattr(pipe, "classes_", None)
     if classes is None:
-        # try to reach final estimator in a Pipeline
         try:
             classes = pipe[-1].classes_
         except Exception:
@@ -326,7 +315,6 @@ def predict_proba_HDA(pipe, X_df: pd.DataFrame) -> np.ndarray:
     ordered = np.stack([proba[:, idx_map.get(0,0)], proba[:, idx_map.get(1,1)], proba[:, idx_map.get(2,2)]], axis=1)
     return ordered
 
-# Back-compat helper
 def run_build_features(seasons: Optional[List[str]] = None):
     if hasattr(F, "build_features"):
         return F.build_features(seasons=seasons)
@@ -534,8 +522,7 @@ with tab_train:
             load_bundle.clear(); load_team_state.clear()
             pipe, feature_order, feature_means, meta = load_bundle()
             ts, teams_from_file = load_team_state()
-            # refresh UI teams + alias
-            global teams_ui, ALIAS_LOOKUP
+            # refresh UI teams + alias (no 'global' needed at top level)
             teams_ui = sorted(set(teams_from_file) | OFFICIAL_2526_TEAMS)
             ALIAS_LOOKUP = build_alias_lookup(teams_ui)
 
