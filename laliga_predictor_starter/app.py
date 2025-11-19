@@ -368,8 +368,6 @@ st.markdown(
 )
 
 # --------------------------- TABS ---------------------------
-# --------------------------- TABS (Persistent) ---------------------------
-# --------------------------- TABS ---------------------------
 
 # If this is the first run, initialize active tab
 if "active_tab" not in st.session_state:
@@ -379,6 +377,10 @@ if "active_tab" not in st.session_state:
 tabs = st.tabs(["Predict", "Train / Data", "About"])
 
 tab_predict, tab_train, tab_about = tabs
+
+# Function to update active tab
+def activate(tab_name):
+    st.session_state["active_tab"] = tab_name
 
 # Capture tab selection
 def _set_tab(name):
@@ -396,6 +398,7 @@ with tab_about:
 
 # --------------------------- PREDICT ---------------------------
 with tab_predict:
+    activate("Predict")
     if st.session_state["active_tab"] != "Predict":
         st.stop()
     col_left, col_right = st.columns([1, 1])
@@ -516,6 +519,7 @@ with tab_predict:
 
 # --------------------------- TRAIN / DATA ---------------------------
 with tab_train:
+    activate("Train / Data")
     if st.session_state["active_tab"] != "Train / Data":
         st.stop()
 
@@ -588,6 +592,7 @@ with tab_train:
 
 # --------------------------- ABOUT ---------------------------
 with tab_about:
+    activate("About")
     if st.session_state["active_tab"] != "About":
         st.stop()
 
@@ -601,6 +606,7 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
