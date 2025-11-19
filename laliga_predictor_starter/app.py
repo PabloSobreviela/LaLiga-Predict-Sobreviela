@@ -374,7 +374,9 @@ if "active_tab" not in st.session_state:
     st.session_state["active_tab"] = "Predict"
 
 # Create tabs
-tabs = st.tabs(["Predict", "Train / Data", "About"])
+# --------------------------- TABS ---------------------------
+tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data", "ℹ️ About"])
+
 
 tab_predict, tab_train, tab_about = tabs
 
@@ -606,6 +608,7 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
