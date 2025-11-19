@@ -368,10 +368,35 @@ st.markdown(
 )
 
 # --------------------------- TABS ---------------------------
-tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data", "ℹ️ About"])
+# --------------------------- TABS (Persistent) ---------------------------
+
+# If this is the first run, initialize active tab
+if "active_tab" not in st.session_state:
+    st.session_state["active_tab"] = "Predict"
+
+# Create tabs
+tabs = st.tabs(["Predict", "Train / Data", "About"])
+
+tab_predict, tab_train, tab_about = tabs
+
+# Capture tab selection
+def _set_tab(name):
+    st.session_state["active_tab"] = name
+
+with tab_predict:
+    _set_tab("Predict")
+
+with tab_train:
+    _set_tab("Train / Data")
+
+with tab_about:
+    _set_tab("About")
+
 
 # --------------------------- PREDICT ---------------------------
 with tab_predict:
+    if st.session_state["active_tab"] != "Predict":
+        st.stop()
     col_left, col_right = st.columns([1, 1])
     with col_left:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -490,6 +515,9 @@ with tab_predict:
 
 # --------------------------- TRAIN / DATA ---------------------------
 with tab_train:
+    if st.session_state["active_tab"] != "Train / Data":
+        st.stop()
+
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("<h3>Dataset & Training</h3>", unsafe_allow_html=True)
 
@@ -559,6 +587,9 @@ with tab_train:
 
 # --------------------------- ABOUT ---------------------------
 with tab_about:
+    if st.session_state["active_tab"] != "About":
+        st.stop()
+
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("<h3>About</h3>", unsafe_allow_html=True)
     st.write("""
@@ -569,6 +600,7 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
