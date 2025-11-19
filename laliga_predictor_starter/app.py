@@ -247,8 +247,9 @@ def load_bundle():
 def load_team_state():
     fp = DATA_PROC / "team_state.parquet"
     if not fp.exists():
-        st.error("team_state.parquet not found. Click **Train / Data → Update dataset & retrain** first.")
-        st.stop()
+        st.warning("team_state.parquet missing — will be created after retraining.")
+        return pd.DataFrame(), []
+
     ts = pd.read_parquet(fp).set_index("Team")
     teams = sorted(ts.index.tolist())
     return ts, teams
