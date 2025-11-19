@@ -370,7 +370,6 @@ st.markdown(
 # --------------------------- TABS ---------------------------
 # --------------------------- TABS (Persistent) ---------------------------
 # --------------------------- TABS ---------------------------
-tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data", "ℹ️ About"])
 
 # If this is the first run, initialize active tab
 if "active_tab" not in st.session_state:
@@ -602,6 +601,7 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
