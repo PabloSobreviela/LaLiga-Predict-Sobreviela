@@ -543,6 +543,7 @@ with tab_train:
 
     retrain_clicked = st.button("Update dataset & retrain", key="btn_retrain")
     if retrain_clicked:
+        st.session_state["active_tab"] = "Train / Data"
         with st.status("Preparing data…", expanded=True) as status:
             # Download CSVs (skip 25/26 if not published)
             for s in selected_codes:
@@ -574,7 +575,6 @@ with tab_train:
 
             # refresh caches/artifacts in this session
             load_bundle.clear(); load_team_state.clear()
-            st.session_state["active_tab"] = "Train / Data"
             st.rerun()
             pipe, feature_order, feature_means, meta = load_bundle()
             ts, teams_from_file = load_team_state()
@@ -602,6 +602,7 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
