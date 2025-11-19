@@ -546,6 +546,7 @@ with tab_train:
 
             # refresh caches/artifacts in this session
             load_bundle.clear(); load_team_state.clear()
+            st.rerun()
             pipe, feature_order, feature_means, meta = load_bundle()
             ts, teams_from_file = load_team_state()
             # refresh UI teams + alias (no 'global' needed at top level)
@@ -568,5 +569,6 @@ form plus a reasonable Elo baseline.
 Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
