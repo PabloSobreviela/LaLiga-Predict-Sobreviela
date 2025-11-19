@@ -4,7 +4,7 @@ CONFIG = {
     "seasons": ["2122", "2223", "2324", "2425"],
     "raw_data_path": "data/raw",
     "processed_data_path": "data/processed",
-    "model_path": "models/model.joblib",
+    "model_path": "laliga_predictor_starter/models/model.joblib",
 
     # Elo settings (slightly stronger + real home edge)
     "elo": {
