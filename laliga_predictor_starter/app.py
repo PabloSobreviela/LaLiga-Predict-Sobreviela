@@ -404,7 +404,7 @@ st.markdown(
 )
 
 # --------------------------- TABS ---------------------------
-tab_predict, tab_train, tab_about = st.tabs(["🔮 Predict", "🧪 Train / Data", "ℹ️ About"])
+tab_predict, tab_train, tab_about = st.tabs(["🎯 Predict", "📋 Train / Data", "ℹ️ About"])
 
 # --------------------------- PREDICT ---------------------------
 with tab_predict:
@@ -679,3 +679,4 @@ Github link: https://github.com/PabloSobreviela/LaLiga-Predict-Sobreviela
     """
     )
     st.markdown("</div>", unsafe_allow_html=True)
+
