@@ -157,7 +157,8 @@ LALIGA_LOGO_URL = "https://assets.laliga.com/assets/logos/LALIGA_RGB_h_color/LAL
 
 
 def render_hero(meta: Dict) -> None:
-    season_text = ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "—"
+    seasons_used = meta.get("seasons_used") or []
+    season_text = ", ".join(season_code_to_label(s) for s in seasons_used) if seasons_used else "—"
     st.markdown(
         f"""
         <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
@@ -178,7 +179,7 @@ def render_metric_cards(metrics: List[Tuple[str, str, str]]) -> None:
 
 
 def render_probability_cards(probabilities: List[float], fair_lines: List[float], winner_idx: int) -> None:
-    labels = [("T1", probabilities[0], fair_lines[0]), ("X", probabilities[1], fair_lines[1]), ("T2", probabilities[2], fair_lines[2])]
+    labels = [("Home", probabilities[0], fair_lines[0]), ("Draw", probabilities[1], fair_lines[1]), ("Away", probabilities[2], fair_lines[2])]
     boxes = []
     for i, (label, prob, fair_line) in enumerate(labels):
         cls = " outcome-box winner" if i == winner_idx else " outcome-box"
@@ -639,8 +640,8 @@ with tab_main:
             ("Log loss", meta.get("logloss_time_split")),
             ("Train rows", meta.get("n_train")),
             ("Test rows", meta.get("n_test")),
-            ("Seasons used", ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "Not recorded"),
-            ("Prediction season", meta.get("predict_season", "Not recorded")),
+            ("Seasons used", ", ".join(season_code_to_label(s) for s in (meta.get("seasons_used") or [])) if meta.get("seasons_used") else "Not recorded"),
+            ("Prediction season", season_code_to_label(meta.get("predict_season", "2526")) if meta.get("predict_season") else "Not recorded"),
         ]
         st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
@@ -712,9 +713,9 @@ with tab_main:
                     st.warning(reason or "Could not fetch odds.")
             ov = st.session_state["odds_values"]
             c1, c2, c3 = st.columns(3)
-            odds_home = c1.number_input("T1", min_value=1.01, value=float(ov["H"]), step=0.01, format="%.2f")
-            odds_draw = c2.number_input("X", min_value=1.01, value=float(ov["D"]), step=0.01, format="%.2f")
-            odds_away = c3.number_input("T2", min_value=1.01, value=float(ov["A"]), step=0.01, format="%.2f")
+            odds_home = c1.number_input("Home", min_value=1.01, value=float(ov["H"]), step=0.01, format="%.2f")
+            odds_draw = c2.number_input("Draw", min_value=1.01, value=float(ov["D"]), step=0.01, format="%.2f")
+            odds_away = c3.number_input("Away", min_value=1.01, value=float(ov["A"]), step=0.01, format="%.2f")
 
     if home and away and not predict_clicked:
         with st.expander("Team comparison"):
