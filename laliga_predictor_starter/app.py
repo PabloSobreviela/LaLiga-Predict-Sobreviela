@@ -377,6 +377,30 @@ def load_team_state():
     return ts, ts.index.tolist()
 
 
+@st.cache_data
+def get_teams_for_season(predict_code: str) -> List[str]:
+    """
+    Return active teams for the given prediction season from features.parquet.
+    If the season has no data (e.g. 25/26), fall back to the latest available season.
+    """
+    if not FEATURES_PATH.exists():
+        return []
+    df = pd.read_parquet(FEATURES_PATH)
+    if "Season" not in df.columns or "HomeTeam" not in df.columns or "AwayTeam" not in df.columns or df.empty:
+        return []
+    sub = df[df["Season"].astype(str) == str(predict_code)]
+    if sub.empty:
+        seasons = df["Season"].dropna().astype(str).unique()
+        if len(seasons) == 0:
+            return []
+        latest = sorted(seasons)[-1]
+        sub = df[df["Season"].astype(str) == latest]
+    if sub.empty:
+        return []
+    teams = pd.concat([sub["HomeTeam"], sub["AwayTeam"]]).dropna().astype(str).str.strip().unique()
+    return sorted([t for t in teams if t])
+
+
 def vector_for_match(home: str, away: str, feature_order, ts: pd.DataFrame, feature_means: Dict[str, float]) -> pd.DataFrame:
     row = pd.Series({col: float(feature_means.get(col, 0.0)) for col in feature_order}, dtype=float)
     if home not in ts.index or away not in ts.index:
@@ -427,6 +451,7 @@ def bootstrap_artifacts(seasons: Optional[List[str]] = None) -> Dict:
         joblib.dump(bundle, MODEL_PATH)
         load_bundle.clear()
         load_team_state.clear()
+        get_teams_for_season.clear()
         return {"ok": True, "accuracy": acc, "logloss": ll, "meta": meta_out, "error": None}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -507,19 +532,84 @@ feature_order = runtime["feature_order"]
 feature_means = runtime["feature_means"]
 meta = runtime["meta"]
 ts = runtime["team_state"]
-teams = runtime["teams"]
+predict_season = meta.get("predict_season", "2425")
+season_teams = get_teams_for_season(predict_season)
+teams = [t for t in season_teams if t in ts.index]
+if not teams:
+    teams = runtime["teams"]
 alias_lookup = build_alias_lookup(teams)
 
 render_metric_cards([
-    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-based validation"),
+    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 80/20 (chronological held-out)"),
     ("Log loss", f"{meta.get('logloss_time_split', 0.0):.3f}", "Lower is better"),
-    ("Teams", str(len(teams)), "Current team-state entries"),
+    ("Teams", str(len(teams)), f"Active in {season_code_to_label(predict_season)}"),
     ("Features", str(len(feature_order)), "Numeric model inputs"),
 ])
 
-tab_predict, tab_train, tab_about = st.tabs(["Predict", "Train", "About"])
+tab_train, tab_predict, tab_about = st.tabs(["Train", "Predict", "About"])
+
+with tab_train:
+    st.markdown('<p class="section-label">Training & data</p>', unsafe_allow_html=True)
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    status = artifact_status()
+    render_metric_cards([
+        ("Raw CSVs", str(len(raw_data_files())), "historical files"),
+        ("Features", "✓" if status["features"] else "—", ""),
+        ("Team state", "✓" if status["team_state"] else "—", ""),
+        ("Model", "✓" if status["model"] else "—", ""),
+    ])
+
+    season_codes = available_season_codes()
+    labels = [season_code_to_label(code) for code in season_codes]
+    default_last_n = min(3, len(season_codes))
+    default_idx = list(range(len(season_codes) - default_last_n, len(season_codes)))
+    selected_labels = st.multiselect("Seasons to train on", options=labels, default=[labels[i] for i in default_idx], key="train_seasons")
+    selected_codes = [label_to_season_code(l) for l in selected_labels] or CONFIG.get("seasons", [])
+    predict_label = st.selectbox("Prediction season", options=labels, index=labels.index("25/26") if "25/26" in labels else len(labels) - 1, key="predict_season")
+    predict_code = label_to_season_code(predict_label)
+
+    if st.button("Download missing data and retrain", key="btn_retrain", type="primary"):
+        with st.status("Updating data and training model...", expanded=True) as status_box:
+            for note in download_missing_seasons(selected_codes):
+                status_box.write(note)
+            status_box.write("Building features...")
+            rebuilt = bootstrap_artifacts(selected_codes)
+            if rebuilt["ok"]:
+                bundle = joblib.load(MODEL_PATH)
+                bundle["meta"] = {
+                    **bundle.get("meta", {}),
+                    "seasons_used": selected_codes,
+                    "predict_season": predict_code,
+                }
+                joblib.dump(bundle, MODEL_PATH)
+                load_bundle.clear()
+                load_team_state.clear()
+                get_teams_for_season.clear()
+                status_box.update(
+                    label=f"Training complete. Accuracy={rebuilt['accuracy']:.3f}, LogLoss={rebuilt['logloss']:.3f}",
+                    state="complete",
+                )
+                st.success("Artifacts refreshed. Reloading app...")
+                st.rerun()
+            else:
+                status_box.update(label="Training failed", state="error")
+                st.error(rebuilt["error"])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if meta:
+        st.markdown('<p class="section-label" style="margin-top:1rem;">Model info</p>', unsafe_allow_html=True)
+        metadata_rows = [
+            ("Accuracy", meta.get("accuracy_time_split")),
+            ("Log loss", meta.get("logloss_time_split")),
+            ("Train rows", meta.get("n_train")),
+            ("Test rows", meta.get("n_test")),
+            ("Seasons used", ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "Not recorded"),
+            ("Prediction season", meta.get("predict_season", "Not recorded")),
+        ]
+        st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
 with tab_predict:
+    st.markdown(f'<p class="section-label">Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
     st.markdown('<p class="section-label">1. Select match</p>', unsafe_allow_html=True)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     col_home, col_vs, col_away = st.columns([2, 0.4, 2])
@@ -607,81 +697,21 @@ with tab_predict:
         except Exception as exc:
             st.error(f"Prediction failed: {type(exc).__name__}: {exc}")
 
-with tab_train:
-    st.markdown('<p class="section-label">Training & data</p>', unsafe_allow_html=True)
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    status = artifact_status()
-    render_metric_cards([
-        ("Raw CSVs", str(len(raw_data_files())), "historical files"),
-        ("Features", "✓" if status["features"] else "—", ""),
-        ("Team state", "✓" if status["team_state"] else "—", ""),
-        ("Model", "✓" if status["model"] else "—", ""),
-    ])
-
-    season_codes = available_season_codes()
-    labels = [season_code_to_label(code) for code in season_codes]
-    default_last_n = min(3, len(season_codes))
-    default_idx = list(range(len(season_codes) - default_last_n, len(season_codes)))
-    selected_labels = st.multiselect("Seasons to train on", options=labels, default=[labels[i] for i in default_idx], key="train_seasons")
-    selected_codes = [label_to_season_code(l) for l in selected_labels] or CONFIG.get("seasons", [])
-    predict_label = st.selectbox("Prediction season", options=labels, index=labels.index("25/26") if "25/26" in labels else len(labels) - 1, key="predict_season")
-    predict_code = label_to_season_code(predict_label)
-
-    if st.button("Download missing data and retrain", key="btn_retrain", type="primary"):
-        with st.status("Updating data and training model...", expanded=True) as status_box:
-            for note in download_missing_seasons(selected_codes):
-                status_box.write(note)
-            status_box.write("Building features...")
-            rebuilt = bootstrap_artifacts(selected_codes)
-            if rebuilt["ok"]:
-                bundle = joblib.load(MODEL_PATH)
-                bundle["meta"] = {
-                    **bundle.get("meta", {}),
-                    "seasons_used": selected_codes,
-                    "predict_season": predict_code,
-                }
-                joblib.dump(bundle, MODEL_PATH)
-                load_bundle.clear()
-                load_team_state.clear()
-                status_box.update(
-                    label=f"Training complete. Accuracy={rebuilt['accuracy']:.3f}, LogLoss={rebuilt['logloss']:.3f}",
-                    state="complete",
-                )
-                st.success("Artifacts refreshed. Reloading app...")
-                st.rerun()
-            else:
-                status_box.update(label="Training failed", state="error")
-                st.error(rebuilt["error"])
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if meta:
-        st.markdown('<p class="section-label" style="margin-top:1rem;">Model info</p>', unsafe_allow_html=True)
-        metadata_rows = [
-            ("Accuracy", meta.get("accuracy_time_split")),
-            ("Log loss", meta.get("logloss_time_split")),
-            ("Train rows", meta.get("n_train")),
-            ("Test rows", meta.get("n_test")),
-            ("Seasons used", ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "Not recorded"),
-            ("Prediction season", meta.get("predict_season", "Not recorded")),
-        ]
-        st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
-
 with tab_about:
     st.markdown('<p class="section-label">About</p>', unsafe_allow_html=True)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.write(
         """
-        This version focuses on three things:
-
-        - a more polished dashboard-style UI,
-        - safer startup behavior when artifacts are missing or stale,
-        - a cleaner training path that is more resilient to dependency updates.
+        **Accuracy:** Computed in `train_model.py` via a chronological 80/20 time-split on the combined training seasons.
+        The model is trained on the first 80% of matches (by date) and evaluated on the held-out last 20%.
+        No future leakage — this simulates real-world prediction performance.
         """
     )
     st.write(
         """
-        The predictor still uses a lightweight logistic regression model over rolling team form, rest days, and Elo-style strength ratings.
-        If you provide live 1X2 odds, the app can blend them with the model output to produce a more market-aware probability view.
+        The predictor uses logistic regression over rolling team form, rest days, and Elo ratings (football-data.co.uk).
+        Teams shown in Predict are those active in the selected prediction season (from features.parquet).
+        You can blend the model with live 1X2 bookmaker odds for a market-aware view.
         """
     )
     st.markdown('</div>', unsafe_allow_html=True)
