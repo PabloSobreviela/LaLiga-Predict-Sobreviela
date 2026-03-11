@@ -29,105 +29,56 @@ st.set_page_config(
 CUSTOM_CSS = """
 #MainMenu, footer {visibility: hidden;}
 header {visibility: hidden;}
-.block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1220px;}
-.hero-shell {
-  background:
-    radial-gradient(circle at top left, rgba(59,130,246,.22), transparent 30%),
-    radial-gradient(circle at top right, rgba(16,185,129,.18), transparent 28%),
-    linear-gradient(135deg, rgba(15,23,42,.95), rgba(17,24,39,.84));
-  border: 1px solid rgba(148,163,184,.16);
-  border-radius: 24px;
-  padding: 1.4rem 1.5rem 1.3rem 1.5rem;
-  box-shadow: 0 18px 50px rgba(15,23,42,.30);
-  margin-bottom: 1rem;
+.block-container {padding-top: 0.5rem; padding-bottom: 1.5rem; max-width: 1100px;}
+[data-testid="stAppViewContainer"] { background: #0f1419; }
+.stTabs [data-baseweb="tab-list"] { gap: 0; border-bottom: 2px solid #2d3748; }
+.stTabs [data-baseweb="tab"] {
+  padding: .6rem 1.2rem; font-weight: 700; color: #94a3b8;
+  border: none; background: transparent;
 }
-.hero-title {
-  font-size: clamp(2rem, 3.6vw, 3.2rem);
-  line-height: 1.05;
-  font-weight: 800;
-  margin: 0;
-  background: linear-gradient(90deg, #f8fafc 0%, #93c5fd 55%, #6ee7b7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.stTabs [aria-selected="true"] { color: #F9A01B; border-bottom: 3px solid #F9A01B; }
+.section-label {
+  font-size: .7rem; font-weight: 800; letter-spacing: .2em; color: #F9A01B;
+  margin-bottom: .5rem; text-transform: uppercase;
 }
-.hero-subtitle {color: #cbd5e1; margin-top: .45rem; font-size: 1rem;}
-.hero-badges {display:flex; gap:.55rem; flex-wrap:wrap; margin-top: .85rem;}
-.hero-badge {
-  display:inline-block;
-  padding:.35rem .7rem;
-  border-radius:999px;
-  font-size:.82rem;
-  color:#e2e8f0;
-  background:rgba(15,23,42,.68);
-  border:1px solid rgba(148,163,184,.18);
+.section-box {
+  background: #1a202c; border: 1px solid #2d3748; border-radius: 8px;
+  padding: 1rem 1.2rem; margin-bottom: 1rem;
 }
-.glass-card {
-  background: linear-gradient(180deg, rgba(15,23,42,.86), rgba(15,23,42,.72));
-  border: 1px solid rgba(148,163,184,.14);
-  border-radius: 22px;
-  padding: 1.05rem 1.1rem;
-  box-shadow: 0 12px 34px rgba(15,23,42,.20);
+.section-box h3 { margin: 0 0 .6rem 0; font-size: 1rem; color: #e2e8f0; font-weight: 600; }
+.metric-row { display: flex; gap: .75rem; margin: .75rem 0; flex-wrap: wrap; }
+.metric-item {
+  background: #252d3a; border: 1px solid #2d3748; border-radius: 6px;
+  padding: .5rem .75rem; flex: 1; min-width: 100px;
 }
-.glass-card h3 {
-  margin: 0 0 .8rem 0;
-  color: #f8fafc;
-  font-size: 1.05rem;
+.metric-item .label { font-size: .65rem; color: #718096; text-transform: uppercase; }
+.metric-item .val { font-size: 1.1rem; font-weight: 700; color: #f7fafc; }
+.outcome-row { display: flex; gap: .5rem; margin: .75rem 0; }
+.outcome-box {
+  flex: 1; background: #252d3a; border: 1px solid #2d3748; border-radius: 6px;
+  padding: .6rem .8rem; text-align: center;
 }
-.metric-strip {
-  display:grid;
-  grid-template-columns:repeat(4, minmax(0, 1fr));
-  gap:.8rem;
-  margin: 1rem 0 1.1rem 0;
+.outcome-box.winner { border-color: #F9A01B; background: #2d2a1f; }
+.outcome-box .label { font-size: .75rem; color: #a0aec0; }
+.outcome-box .pct { font-size: 1.4rem; font-weight: 800; color: #f7fafc; }
+.outcome-box .odds { font-size: .7rem; color: #718096; }
+.result-bar {
+  padding: .8rem 1rem; border-radius: 6px; font-weight: 700; font-size: 1.1rem;
+  background: #1e3a5f; border-left: 4px solid #F9A01B; color: #f7fafc;
 }
-.metric-card {
-  background: rgba(15,23,42,.72);
-  border: 1px solid rgba(148,163,184,.14);
-  border-radius: 18px;
-  padding: .95rem 1rem;
+.train-primary {
+  background: #F9A01B !important; color: #0f1419 !important; font-weight: 700 !important;
+  padding: .65rem 1.2rem !important; border-radius: 6px !important;
 }
-.metric-label {color:#94a3b8; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em;}
-.metric-value {color:#f8fafc; font-size:1.45rem; font-weight:700; margin-top:.2rem;}
-.metric-help {color:#cbd5e1; font-size:.82rem; margin-top:.2rem;}
-.prob-card {
-  background: linear-gradient(180deg, rgba(30,41,59,.88), rgba(15,23,42,.88));
-  border: 1px solid rgba(96,165,250,.16);
-  border-radius: 18px;
-  padding: .95rem 1rem;
+.predict-primary {
+  background: #2b6cb0 !important; color: white !important; font-weight: 700 !important;
+  padding: .7rem 1.5rem !important; border-radius: 6px !important; font-size: 1rem !important;
 }
-.prob-label {color:#cbd5e1; font-size:.9rem; margin-bottom:.35rem;}
-.prob-value {color:#f8fafc; font-size:1.7rem; font-weight:800;}
-.prob-note {color:#94a3b8; font-size:.82rem;}
-.result-banner {
-  padding: .9rem 1rem;
-  border-radius: 18px;
-  color: #f8fafc;
-  background: linear-gradient(90deg, rgba(37,99,235,.92), rgba(16,185,129,.82));
-  margin-bottom: .9rem;
-  font-weight: 700;
-}
-.pill {
-  display:inline-block;
-  padding:.28rem .66rem;
-  border-radius:999px;
-  font-size:.78rem;
-  border:1px solid rgba(148,163,184,.18);
-  background:rgba(15,23,42,.72);
-  color:#e2e8f0;
-}
-.stButton > button, .stDownloadButton > button {
-  border-radius: 12px;
-  border: 0;
-  padding: .6rem 1rem;
-  background: linear-gradient(90deg, #2563eb, #0f766e);
-  color: white;
-}
-.stButton > button:hover, .stDownloadButton > button:hover {filter: brightness(1.06);}
 .stSelectbox div[data-baseweb="select"], .stTextInput input, .stNumberInput input {
-  border-radius: 12px !important;
+  border-radius: 6px !important; border-color: #2d3748 !important;
 }
-@media (max-width: 900px) {
-  .metric-strip {grid-template-columns:repeat(2, minmax(0, 1fr));}
-}
+.stButton > button[kind="primary"] { background: #2b6cb0 !important; color: white !important; font-weight: 700 !important; }
+div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
 """
 st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
 
@@ -199,18 +150,14 @@ def artifact_status() -> Dict[str, bool]:
 
 
 def render_hero(meta: Dict) -> None:
-    season_text = ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "Local historical seasons"
+    season_text = ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "—"
     st.markdown(
         f"""
-        <div class="hero-shell">
-          <p class="hero-title">LaLiga Match Predictor</p>
-          <div class="hero-subtitle">
-            Modernized Streamlit dashboard for match probabilities, team form snapshots, and optional bookmaker blending.
-          </div>
-          <div class="hero-badges">
-            <span class="hero-badge">Model: logistic regression</span>
-            <span class="hero-badge">Data: football-data.co.uk + team-state features</span>
-            <span class="hero-badge">Training seasons: {season_text}</span>
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
+          <span style="font-size:2rem;">⚽</span>
+          <div>
+            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">LaLiga Match Predictor</h1>
+            <span style="font-size:.85rem;color:#718096;">Seasons: {season_text} · Elo + form · football-data.co.uk</span>
           </div>
         </div>
         """,
@@ -219,34 +166,17 @@ def render_hero(meta: Dict) -> None:
 
 
 def render_metric_cards(metrics: List[Tuple[str, str, str]]) -> None:
-    cards = []
-    for label, value, help_text in metrics:
-        cards.append(
-            f"""
-            <div class="metric-card">
-              <div class="metric-label">{label}</div>
-              <div class="metric-value">{value}</div>
-              <div class="metric-help">{help_text}</div>
-            </div>
-            """
-        )
-    st.markdown(f'<div class="metric-strip">{"".join(cards)}</div>', unsafe_allow_html=True)
+    items = [f'<div class="metric-item"><div class="label">{l}</div><div class="val">{v}</div><div class="label">{h}</div></div>' for l, v, h in metrics]
+    st.markdown(f'<div class="metric-row">{"".join(items)}</div>', unsafe_allow_html=True)
 
 
-def render_probability_cards(probabilities: List[float], fair_lines: List[float]) -> None:
-    labels = [("Home win", probabilities[0], fair_lines[0]), ("Draw", probabilities[1], fair_lines[1]), ("Away win", probabilities[2], fair_lines[2])]
-    cols = st.columns(3)
-    for col, (label, prob, fair_line) in zip(cols, labels):
-        col.markdown(
-            f"""
-            <div class="prob-card">
-              <div class="prob-label">{label}</div>
-              <div class="prob-value">{prob * 100:.1f}%</div>
-              <div class="prob-note">Fair odds: {fair_line:.2f}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+def render_probability_cards(probabilities: List[float], fair_lines: List[float], winner_idx: int) -> None:
+    labels = [("Home", probabilities[0], fair_lines[0]), ("Draw", probabilities[1], fair_lines[1]), ("Away", probabilities[2], fair_lines[2])]
+    boxes = []
+    for i, (label, prob, fair_line) in enumerate(labels):
+        cls = " outcome-box winner" if i == winner_idx else " outcome-box"
+        boxes.append(f'<div class="{cls.strip()}"><div class="label">{label}</div><div class="pct">{prob*100:.1f}%</div><div class="odds">Fair: {fair_line:.2f}</div></div>')
+    st.markdown(f'<div class="outcome-row">{"".join(boxes)}</div>', unsafe_allow_html=True)
 
 
 def build_alias_lookup(teams: List[str]) -> Dict[str, Set[str]]:
@@ -587,89 +517,57 @@ render_metric_cards([
     ("Features", str(len(feature_order)), "Numeric model inputs"),
 ])
 
-tab_predict, tab_train, tab_about = st.tabs(["Predict", "Train / Data", "About"])
+tab_predict, tab_train, tab_about = st.tabs(["Predict", "Train", "About"])
 
 with tab_predict:
-    selector_col, market_col = st.columns([1.15, 0.85], gap="large")
+    st.markdown('<p class="section-label">1. Select match</p>', unsafe_allow_html=True)
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    col_home, col_vs, col_away = st.columns([2, 0.4, 2])
+    with col_home:
+        home = st.selectbox("Home", teams, index=0, key="home_team_ui", label_visibility="collapsed")
+    with col_vs:
+        st.markdown('<div style="text-align:center;padding-top:1.5rem;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
+    with col_away:
+        away_options = [t for t in teams if t != home]
+        away = st.selectbox("Away", away_options if away_options else teams, index=0, key="away_team_ui", label_visibility="collapsed")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with selector_col:
-        st.markdown('<div class="glass-card"><h3>Match setup</h3></div>', unsafe_allow_html=True)
-        home = st.selectbox("Home team", teams, index=0, key="home_team_ui")
-        away_options = [team for team in teams if team != home]
-        away_default = 0 if away_options else None
-        away = st.selectbox("Away team", away_options, index=away_default, key="away_team_ui")
+    st.markdown('<p class="section-label">2. Get prediction</p>', unsafe_allow_html=True)
+    predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
 
-        if home and away:
-            team_compare = pd.DataFrame({
-                "Metric": ["Elo", "Recent goals for", "Recent goal diff", "Rest days"],
-                home: [
-                    round(float(ts.loc[home, "elo"]), 1),
-                    round(float(ts.loc[home, "team_last_gf"]), 2),
-                    round(float(ts.loc[home, "team_last_gd"]), 2),
-                    round(float(ts.loc[home, "team_rest_days"]), 1),
-                ],
-                away: [
-                    round(float(ts.loc[away, "elo"]), 1),
-                    round(float(ts.loc[away, "team_last_gf"]), 2),
-                    round(float(ts.loc[away, "team_last_gd"]), 2),
-                    round(float(ts.loc[away, "team_rest_days"]), 1),
-                ],
-            })
-            st.dataframe(team_compare, use_container_width=True, hide_index=True)
-
-    with market_col:
-        st.markdown('<div class="glass-card"><h3>Market blend</h3></div>', unsafe_allow_html=True)
+    with st.expander("Blend with bookmaker odds (optional)"):
         use_market = st.toggle("Blend live bookmaker odds", value=False, help="Weight the model with normalized 1X2 market odds.")
         market_weight = 0.25
+        odds_home = odds_draw = odds_away = None
         if use_market:
             market_weight = st.slider("Market weight", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
-            api_key_ui = st.text_input(
-                "Odds API key",
-                value=st.session_state.get("odds_api_key", ""),
-                type="password",
-                help="Stored only in this local Streamlit session.",
-            )
+            api_key_ui = st.text_input("Odds API key", value=st.session_state.get("odds_api_key", ""), type="password", help="Session only.")
             if api_key_ui:
                 st.session_state["odds_api_key"] = api_key_ui
             if "odds_values" not in st.session_state:
                 st.session_state["odds_values"] = DEFAULT_ODDS.copy()
-
-            fetch_col, _ = st.columns([1, 1])
-            with fetch_col:
-                if st.button("Fetch live odds", key="btn_fetch_odds"):
-                    live_odds, reason = fetch_live_odds(home, away, get_odds_api_key(), alias_lookup)
-                    if live_odds:
-                        oh, od, oa, source = live_odds
-                        st.session_state["odds_values"] = {"H": oh, "D": od, "A": oa, "src": source}
-                        st.success(f"Loaded odds from {source}.")
-                    else:
-                        st.warning(reason or "Could not fetch odds.")
-
-            odds_values = st.session_state["odds_values"]
-            col_h, col_d, col_a = st.columns(3)
-            odds_home = col_h.number_input("Home", min_value=1.01, value=float(odds_values["H"]), step=0.01, format="%.2f")
-            odds_draw = col_d.number_input("Draw", min_value=1.01, value=float(odds_values["D"]), step=0.01, format="%.2f")
-            odds_away = col_a.number_input("Away", min_value=1.01, value=float(odds_values["A"]), step=0.01, format="%.2f")
-            if odds_values.get("src"):
-                st.caption(f"Source: {odds_values['src']}")
-
-            with st.expander("Upcoming fixtures from Odds API"):
-                events, error_message = list_upcoming_events(get_odds_api_key())
-                if error_message:
-                    st.write(error_message)
-                elif not events:
-                    st.write("No events returned.")
+            if st.button("Fetch live odds", key="btn_fetch_odds"):
+                live_odds, reason = fetch_live_odds(home, away, get_odds_api_key(), alias_lookup)
+                if live_odds:
+                    oh, od, oa, source = live_odds
+                    st.session_state["odds_values"] = {"H": oh, "D": od, "A": oa, "src": source}
+                    st.success(f"Loaded from {source}.")
                 else:
-                    event_rows = [
-                        {"Home": event.get("home_team", ""), "Away": event.get("away_team", "")}
-                        for event in events
-                    ]
-                    st.dataframe(pd.DataFrame(event_rows), use_container_width=True, hide_index=True)
-        else:
-            odds_home = odds_draw = odds_away = None
-            st.caption("Use the toggle above if you want to blend the model with current market prices.")
+                    st.warning(reason or "Could not fetch odds.")
+            ov = st.session_state["odds_values"]
+            c1, c2, c3 = st.columns(3)
+            odds_home = c1.number_input("Home", min_value=1.01, value=float(ov["H"]), step=0.01, format="%.2f")
+            odds_draw = c2.number_input("Draw", min_value=1.01, value=float(ov["D"]), step=0.01, format="%.2f")
+            odds_away = c3.number_input("Away", min_value=1.01, value=float(ov["A"]), step=0.01, format="%.2f")
 
-    predict_clicked = st.button("Generate prediction", key="btn_predict_main")
+    if home and away and not predict_clicked:
+        with st.expander("Team comparison"):
+            team_compare = pd.DataFrame({
+                "Metric": ["Elo", "Goals for (last 5)", "Goal diff (last 5)", "Rest days"],
+                home: [round(float(ts.loc[home, "elo"]), 1), round(float(ts.loc[home, "team_last_gf"]), 2), round(float(ts.loc[home, "team_last_gd"]), 2), round(float(ts.loc[home, "team_rest_days"]), 1)],
+                away: [round(float(ts.loc[away, "elo"]), 1), round(float(ts.loc[away, "team_last_gf"]), 2), round(float(ts.loc[away, "team_last_gd"]), 2), round(float(ts.loc[away, "team_rest_days"]), 1)],
+            })
+            st.dataframe(team_compare, use_container_width=True, hide_index=True)
     if predict_clicked:
         try:
             match_vector = vector_for_match(home, away, feature_order, ts, feature_means)
@@ -682,13 +580,15 @@ with tab_predict:
                 final_probs = (blended / blended.sum()).tolist()
                 result_note = f"Blended with market weight {market_weight:.2f}"
 
-            predicted_label = ["H", "D", "A"][int(np.argmax(final_probs))]
+            winner_idx = int(np.argmax(final_probs))
+            predicted_label = ["H", "D", "A"][winner_idx]
+            label_txt = ["Home win", "Draw", "Away win"][winner_idx]
             st.markdown(
-                f'<div class="result-banner">Prediction for {home} vs {away}: {predicted_label} <span class="pill">{result_note}</span></div>',
+                f'<div class="result-bar">Prediction: {label_txt} — {result_note}</div>',
                 unsafe_allow_html=True,
             )
             fair_lines = fair_odds(final_probs)
-            render_probability_cards(final_probs, fair_lines)
+            render_probability_cards(final_probs, fair_lines, winner_idx)
 
             chart_df = pd.DataFrame(
                 {"Outcome": ["Home", "Draw", "Away"], "Probability": final_probs}
@@ -708,35 +608,26 @@ with tab_predict:
             st.error(f"Prediction failed: {type(exc).__name__}: {exc}")
 
 with tab_train:
-    st.markdown('<div class="glass-card"><h3>Dataset and training controls</h3></div>', unsafe_allow_html=True)
+    st.markdown('<p class="section-label">Training & data</p>', unsafe_allow_html=True)
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
     status = artifact_status()
     render_metric_cards([
-        ("Raw CSVs", str(len(raw_data_files())), "Available historical files"),
-        ("Features parquet", "Yes" if status["features"] else "No", str(FEATURES_PATH)),
-        ("Team state", "Yes" if status["team_state"] else "No", str(TEAM_STATE_PATH)),
-        ("Model bundle", "Yes" if status["model"] else "No", str(MODEL_PATH)),
+        ("Raw CSVs", str(len(raw_data_files())), "historical files"),
+        ("Features", "✓" if status["features"] else "—", ""),
+        ("Team state", "✓" if status["team_state"] else "—", ""),
+        ("Model", "✓" if status["model"] else "—", ""),
     ])
 
     season_codes = available_season_codes()
     labels = [season_code_to_label(code) for code in season_codes]
     default_last_n = min(3, len(season_codes))
     default_idx = list(range(len(season_codes) - default_last_n, len(season_codes)))
-    selected_labels = st.multiselect(
-        "Training seasons",
-        options=labels,
-        default=[labels[i] for i in default_idx],
-        key="train_seasons",
-    )
-    selected_codes = [label_to_season_code(label) for label in selected_labels] or CONFIG.get("seasons", [])
-    predict_label = st.selectbox(
-        "Prediction season label",
-        options=labels,
-        index=labels.index("25/26") if "25/26" in labels else len(labels) - 1,
-        key="predict_season",
-    )
+    selected_labels = st.multiselect("Seasons to train on", options=labels, default=[labels[i] for i in default_idx], key="train_seasons")
+    selected_codes = [label_to_season_code(l) for l in selected_labels] or CONFIG.get("seasons", [])
+    predict_label = st.selectbox("Prediction season", options=labels, index=labels.index("25/26") if "25/26" in labels else len(labels) - 1, key="predict_season")
     predict_code = label_to_season_code(predict_label)
 
-    if st.button("Download missing data and retrain", key="btn_retrain"):
+    if st.button("Download missing data and retrain", key="btn_retrain", type="primary"):
         with st.status("Updating data and training model...", expanded=True) as status_box:
             for note in download_missing_seasons(selected_codes):
                 status_box.write(note)
@@ -761,9 +652,10 @@ with tab_train:
             else:
                 status_box.update(label="Training failed", state="error")
                 st.error(rebuilt["error"])
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if meta:
-        st.subheader("Current model metadata")
+        st.markdown('<p class="section-label" style="margin-top:1rem;">Model info</p>', unsafe_allow_html=True)
         metadata_rows = [
             ("Accuracy", meta.get("accuracy_time_split")),
             ("Log loss", meta.get("logloss_time_split")),
@@ -775,7 +667,8 @@ with tab_train:
         st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
 with tab_about:
-    st.markdown('<div class="glass-card"><h3>What changed</h3></div>', unsafe_allow_html=True)
+    st.markdown('<p class="section-label">About</p>', unsafe_allow_html=True)
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
     st.write(
         """
         This version focuses on three things:
@@ -791,3 +684,4 @@ with tab_about:
         If you provide live 1X2 odds, the app can blend them with the model output to produce a more market-aware probability view.
         """
     )
+    st.markdown('</div>', unsafe_allow_html=True)
