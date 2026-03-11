@@ -77,7 +77,15 @@ header {visibility: hidden;}
 }
 .stSelectbox div[data-baseweb="select"], .stTextInput input, .stNumberInput input {
   border-radius: 6px !important; border-color: #2d3748 !important;
+  background-color: #e2e8f0 !important; color: #1a202c !important;
 }
+div[data-baseweb="select"] > div { background-color: #e2e8f0 !important; color: #1a202c !important; }
+[data-testid="stDataFrame"] { background-color: #e2e8f0 !important; }
+[data-testid="stDataFrame"] div[data-testid="stDataFrameResizable"] { background-color: #e2e8f0 !important; }
+[data-testid="stExpander"] { background-color: #e2e8f0 !important; border-radius: 6px; }
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary, [data-testid="stExpander"] > div { background-color: #e2e8f0 !important; }
+.stMultiSelect div[data-baseweb="select"] { background-color: #e2e8f0 !important; }
+.stMultiSelect span[data-baseweb="tag"] { background-color: #cbd5e0 !important; color: #1a202c !important; }
 .stButton > button[kind="primary"] { background: #2b6cb0 !important; color: #e2e8f0 !important; font-weight: 700 !important; }
 div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
 .match-display { display: flex; align-items: center; justify-content: center; width: 100%; margin: 0 auto; }
