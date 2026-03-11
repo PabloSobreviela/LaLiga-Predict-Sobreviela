@@ -532,7 +532,7 @@ feature_order = runtime["feature_order"]
 feature_means = runtime["feature_means"]
 meta = runtime["meta"]
 ts = runtime["team_state"]
-predict_season = meta.get("predict_season", "2425")
+predict_season = meta.get("predict_season", "2526")
 season_teams = get_teams_for_season(predict_season)
 teams = [t for t in season_teams if t in ts.index]
 if not teams:
@@ -540,10 +540,10 @@ if not teams:
 alias_lookup = build_alias_lookup(teams)
 
 render_metric_cards([
-    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 80/20 (chronological held-out)"),
+    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 80/20"),
+    ("Precision", f"{meta.get('precision_time_split', 0.0):.3f}", "Macro avg"),
     ("Log loss", f"{meta.get('logloss_time_split', 0.0):.3f}", "Lower is better"),
     ("Teams", str(len(teams)), f"Active in {season_code_to_label(predict_season)}"),
-    ("Features", str(len(feature_order)), "Numeric model inputs"),
 ])
 
 tab_main, tab_about = st.tabs(["Train & Predict", "About"])
@@ -561,9 +561,8 @@ with tab_main:
 
     season_codes = available_season_codes()
     labels = [season_code_to_label(code) for code in season_codes]
-    default_last_n = min(3, len(season_codes))
-    default_idx = list(range(len(season_codes) - default_last_n, len(season_codes)))
-    selected_labels = st.multiselect("Seasons to train on", options=labels, default=[labels[i] for i in default_idx], key="train_seasons")
+    default_train = [l for l in labels if l != "25/26"]
+    selected_labels = st.multiselect("Seasons to train on", options=labels, default=default_train, key="train_seasons")
     selected_codes = [label_to_season_code(l) for l in selected_labels] or CONFIG.get("seasons", [])
     predict_label = st.selectbox("Prediction season", options=labels, index=labels.index("25/26") if "25/26" in labels else len(labels) - 1, key="predict_season")
     predict_code = label_to_season_code(predict_label)
@@ -585,8 +584,9 @@ with tab_main:
                 load_bundle.clear()
                 load_team_state.clear()
                 get_teams_for_season.clear()
+                prec = rebuilt.get("meta", {}).get("precision_time_split", 0)
                 status_box.update(
-                    label=f"Training complete. Accuracy={rebuilt['accuracy']:.3f}, LogLoss={rebuilt['logloss']:.3f}",
+                    label=f"Training complete. Acc={rebuilt['accuracy']:.3f} Prec={prec:.3f} LogLoss={rebuilt['logloss']:.3f}",
                     state="complete",
                 )
                 st.success("Artifacts refreshed. Reloading app...")
@@ -600,6 +600,7 @@ with tab_main:
         st.markdown('<p class="section-label" style="margin-top:0.5rem;">Model info</p>', unsafe_allow_html=True)
         metadata_rows = [
             ("Accuracy", meta.get("accuracy_time_split")),
+            ("Precision", meta.get("precision_time_split")),
             ("Log loss", meta.get("logloss_time_split")),
             ("Train rows", meta.get("n_train")),
             ("Test rows", meta.get("n_test")),
@@ -668,19 +669,10 @@ with tab_main:
                 result_note = f"Blended with market weight {market_weight:.2f}"
 
             winner_idx = int(np.argmax(final_probs))
-            predicted_label = ["H", "D", "A"][winner_idx]
             label_txt = ["Home win", "Draw", "Away win"][winner_idx]
-            st.markdown(
-                f'<div class="result-bar">Prediction: {label_txt} — {result_note}</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"**Prediction: {label_txt}** ({result_note})")
             fair_lines = fair_odds(final_probs)
             render_probability_cards(final_probs, fair_lines, winner_idx)
-
-            chart_df = pd.DataFrame(
-                {"Outcome": ["Home", "Draw", "Away"], "Probability": final_probs}
-            ).set_index("Outcome")
-            st.bar_chart(chart_df)
 
             details_df = pd.DataFrame(
                 {

@@ -8,7 +8,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import accuracy_score, log_loss
+from sklearn.metrics import accuracy_score, log_loss, precision_score
 
 from src.config import CONFIG
 
@@ -17,7 +17,7 @@ MODEL_PATH = Path(CONFIG["model_path"])
 TARGET_LABELS = [0, 1, 2]
 
 # Boosting rounds for iterative learning (more = better fit, slower)
-DEFAULT_MAX_ITER = 300
+DEFAULT_MAX_ITER = 550
 
 
 def _ensure_labels(df: pd.DataFrame) -> pd.Series:
@@ -160,7 +160,7 @@ def train(max_iter: int = DEFAULT_MAX_ITER) -> Tuple[float, float, Dict]:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, MODEL_PATH)
 
-    print(f"Time-split Accuracy: {acc:.3f} | LogLoss: {ll:.3f} | Features: {len(feature_cols)}")
+    print(f"Time-split Accuracy: {acc:.3f} | Precision: {prec:.3f} | LogLoss: {ll:.3f} | Features: {len(feature_cols)}")
     return acc, ll, meta
 
 
