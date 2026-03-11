@@ -11,7 +11,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier, VotingClassifier
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import accuracy_score, log_loss, precision_score
 from sklearn.utils.multiclass import check_classification_targets
-import numpy as np
+from sklearn.utils.class_weight import compute_sample_weight
 
 from src.config import CONFIG
 
@@ -25,12 +25,15 @@ class _HGBMultiSeedEnsemble(BaseEstimator, ClassifierMixin):
         self.hgb_params = {k: v for k, v in hgb_params.items() if k != "random_state"}
         self.models_: List[HistGradientBoostingClassifier] = []
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         check_classification_targets(y)
         self.models_ = []
         for s in self.seeds[: self.n_models]:
             m = HistGradientBoostingClassifier(**self.hgb_params, random_state=s)
-            m.fit(X, y)
+            if sample_weight is not None:
+                m.fit(X, y, sample_weight=sample_weight)
+            else:
+                m.fit(X, y)
             self.models_.append(m)
         self.classes_ = self.models_[0].classes_
         return self
@@ -205,8 +208,11 @@ def train(max_iter: int = DEFAULT_MAX_ITER, test_frac: float = DEFAULT_TEST_FRAC
     X_train = train_df[feature_cols].copy()
     X_test = test_df[feature_cols].copy()
 
+    # Sample weights to counteract class imbalance (Home ~45%, Draw ~26%, Away ~29%)
+    sample_weight = compute_sample_weight(class_weight="balanced", y=y_train)
+
     pipe = _build_pipeline(max_iter=max_iter)
-    pipe.fit(X_train, y_train)
+    pipe.fit(X_train, y_train, clf__sample_weight=sample_weight)
 
     y_pred = pipe.predict(X_test)
     y_proba = pipe.predict_proba(X_test)

@@ -1,16 +1,20 @@
+from pathlib import Path
+
+# Resolve paths relative to package root (works on Streamlit Cloud regardless of cwd)
+_PKG_ROOT = Path(__file__).resolve().parent.parent
+
 CONFIG = {
     "league": "SP1",
-    # Add more seasons so Elo+form actually separate big teams like Barcelona
     "seasons": ["1314", "1415", "1516", "1617", "1819", "1920", "2021", "2122", "2223", "2324", "2425"],
-    "raw_data_path": "data/raw",
-    "processed_data_path": "data/processed",
-    "model_path": "laliga_predictor_starter/models/model.joblib",
+    "raw_data_path": str(_PKG_ROOT / "data" / "raw"),
+    "processed_data_path": str(_PKG_ROOT / "data" / "processed"),
+    "model_path": str(_PKG_ROOT / "models" / "model.joblib"),
 
-    # Elo settings (slightly stronger + real home edge)
+    # Elo settings (moderate home edge to avoid over-weighting home advantage)
     "elo": {
         "base": 1500,
-        "k": 30,        # was 20 — a little more responsive
-        "home_adv": 90  # was 60 — home teams do better on average
+        "k": 30,
+        "home_adv": 65,
     },
 
     # Rolling window for "recent form"
