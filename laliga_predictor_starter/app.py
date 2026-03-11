@@ -80,6 +80,8 @@ header {visibility: hidden;}
 }
 .stButton > button[kind="primary"] { background: #2b6cb0 !important; color: white !important; font-weight: 700 !important; }
 div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
+.match-display { display: flex; align-items: center; justify-content: center; width: 100%; margin: 0 auto; }
+.match-display-inner { display: flex; align-items: center; justify-content: center; gap: 1.25rem; flex-wrap: wrap; }
 """
 st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
 
@@ -672,7 +674,7 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
 
-    # La Liga match format: Team Name | Shield | VS | Shield | Team Name — centered, shifted right
+    # La Liga match format: Team Name | Shield | VS | Shield | Team Name — absolutely centered
     home_crest = get_crest_url(home)
     away_crest = get_crest_url(away)
     home_display = get_display_name(home)
@@ -682,15 +684,17 @@ with tab_main:
     away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;padding-left:calc(1rem + 3px);flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:.5rem;">
-            <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{home_display}</span>
-            <span>{home_img}</span>
-          </div>
-          <span style="font-weight:800;font-size:1rem;color:#718096;letter-spacing:.1em;">VS</span>
-          <div style="display:flex;align-items:center;gap:.5rem;">
-            <span>{away_img}</span>
-            <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{away_display}</span>
+        <div class="match-display" style="margin:1rem 0;">
+          <div class="match-display-inner">
+            <div style="display:flex;align-items:center;gap:.5rem;">
+              <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{home_display}</span>
+              <span>{home_img}</span>
+            </div>
+            <span style="font-weight:800;font-size:1rem;color:#718096;letter-spacing:.1em;">VS</span>
+            <div style="display:flex;align-items:center;gap:.5rem;">
+              <span>{away_img}</span>
+              <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{away_display}</span>
+            </div>
           </div>
         </div>
         """,
