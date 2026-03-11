@@ -6,6 +6,7 @@ import joblib
 import pandas as pd
 from sklearn.metrics import accuracy_score, log_loss, classification_report, confusion_matrix
 from src.config import CONFIG
+from src.train_model import _ensure_labels
 
 def load_features() -> pd.DataFrame:
     return pd.read_parquet(Path(CONFIG["processed_data_path"]) / "features.parquet")
@@ -25,14 +26,14 @@ def main():
 
     df = load_features()
     _, test_df = time_split(df, test_frac=0.2)
-    X_test = test_df[feature_order].values
-    y_test = test_df["y"].values
+    X_test = test_df[feature_order]
+    y_test = _ensure_labels(test_df).values
 
     preds = pipe.predict(X_test)
     probs = pipe.predict_proba(X_test)
 
     print(f"Accuracy: {accuracy_score(y_test, preds):.3f}")
-    print(f"LogLoss: {log_loss(y_test, probs):.3f}")
+    print(f"LogLoss: {log_loss(y_test, probs, labels=[0, 1, 2]):.3f}")
     print("Confusion matrix:\n", confusion_matrix(y_test, preds))
     print("\nReport:\n", classification_report(y_test, preds, digits=3))
 

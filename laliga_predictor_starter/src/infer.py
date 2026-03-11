@@ -31,8 +31,6 @@ def load_team_state():
     return pd.read_parquet(fp).set_index("Team")
 
 def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dict, odds=None):
-    import pandas as pd
-
     # Start from training means (neutral baseline)
     row = pd.Series({c: float(feature_means.get(c, 0.0)) for c in feature_order}, dtype=float)
 
@@ -47,11 +45,11 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
 
     # Rolling form → home/away slots
     mapping = {
-        "team_last5_gf": ("home_last5_gf", "away_last5_gf"),
-        "team_last5_ga": ("home_last5_ga", "away_last5_ga"),
-        "team_last5_gd": ("home_last5_gd", "away_last5_gd"),
-        "team_last5_sot_for": ("home_last5_sot_for", "away_last5_sot_for"),
-        "team_last5_sot_against": ("home_last5_sot_against", "away_last5_sot_against"),
+        "team_last_gf": ("home_last_gf", "away_last_gf"),
+        "team_last_ga": ("home_last_ga", "away_last_ga"),
+        "team_last_gd": ("home_last_gd", "away_last_gd"),
+        "team_last_sot_for": ("home_last_sot_for", "away_last_sot_for"),
+        "team_last_sot_against": ("home_last_sot_against", "away_last_sot_against"),
         "team_rest_days": ("rest_days_home", "rest_days_away"),
     }
     for tcol, (hcol, acol) in mapping.items():
@@ -60,15 +58,15 @@ def vector_for_match(home: str, away: str, feature_order, ts, feature_means: dic
 
     # If engineered diffs exist, compute them now
     if "form_gd_diff" in row.index:
-        row["form_gd_diff"] = row.get("home_last5_gd", 0.0) - row.get("away_last5_gd", 0.0)
+        row["form_gd_diff"] = row.get("home_last_gd", 0.0) - row.get("away_last_gd", 0.0)
     if "form_sot_for_diff" in row.index:
-        row["form_sot_for_diff"] = row.get("home_last5_sot_for", 0.0) - row.get("away_last5_sot_for", 0.0)
+        row["form_sot_for_diff"] = row.get("home_last_sot_for", 0.0) - row.get("away_last_sot_for", 0.0)
     if "form_sot_against_diff" in row.index:
-        row["form_sot_against_diff"] = row.get("home_last5_sot_against", 0.0) - row.get("away_last5_sot_against", 0.0)
+        row["form_sot_against_diff"] = row.get("home_last_sot_against", 0.0) - row.get("away_last_sot_against", 0.0)
     if "rest_days_diff" in row.index:
         row["rest_days_diff"] = row.get("rest_days_home", 0.0) - row.get("rest_days_away", 0.0)
 
-    return pd.DataFrame([row.values], columns=feature_order)
+    return pd.DataFrame([row], columns=feature_order)
 
 
 def main():
@@ -87,8 +85,7 @@ def main():
     ts = load_team_state()
     X = vector_for_match(args.home, args.away, feature_order, ts, feature_means, odds)
 
-    X_arr = X.values  # convert to numpy array to match training and silence sklearn warning
-    probs = pipe.predict_proba(X_arr)[0].tolist()
+    probs = pipe.predict_proba(X)[0].tolist()
     pred = int(np.argmax(probs))
     mapping_inv = {0:"H", 1:"D", 2:"A"}
 

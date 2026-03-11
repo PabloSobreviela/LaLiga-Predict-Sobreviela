@@ -1,158 +1,158 @@
-# src/train_model.py — trainer used by the working app (labels with fallback)
-
-from __future__ import annotations
-from pathlib import Path
-from typing import List, Tuple
-
-import joblib
 import numpy as np
 import pandas as pd
+import joblib
+from pathlib import Path
+from typing import Tuple, Dict, List
+
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, log_loss
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
-from .config import CONFIG
+from src.config import CONFIG
 
-
-def _expected_feature_order() -> List[str]:
-    return [
-        "elo_home", "elo_away", "elo_diff",
-        "home_gf_roll", "away_gf_roll",
-        "home_ga_roll", "away_ga_roll",
-        "home_gd_roll", "away_gd_roll",
-        "home_sotf_roll", "away_sotf_roll",
-        "home_sota_roll", "away_sota_roll",
-        "home_rest_days", "away_rest_days",
-        "form_gd_diff", "form_sot_for_diff",
-        "form_sot_against_diff", "rest_days_diff",
-    ]
+DATA_PROC = Path(CONFIG["processed_data_path"])
+MODEL_PATH = Path(CONFIG["model_path"])
+TARGET_LABELS = [0, 1, 2]
 
 
-def _ensure_features_exist() -> Path:
-    proc_dir = Path(CONFIG["processed_data_path"])
-    proc_dir.mkdir(parents=True, exist_ok=True)
-    feats_path = proc_dir / "features.parquet"
-    if feats_path.exists():
-        return feats_path
-
-    raw_dir = Path(CONFIG["raw_data_path"])
-    csvs = sorted(raw_dir.glob(f"{CONFIG['league']}_*.csv"))
-    if not csvs:
-        raise FileNotFoundError(
-            f"{feats_path} not found and no raw CSVs were found in {raw_dir}.\n"
-            "Use **Train / Data → Update dataset & retrain** in the app to fetch CSVs first."
-        )
-
-    # Try to auto-build if features are missing
-    try:
-        from . import features as F
-        F.build_features(seasons=None)
-    except Exception as e:
-        raise FileNotFoundError(
-            f"{feats_path} not found and auto-build failed: {e}"
-        )
-
-    if not feats_path.exists():
-        raise FileNotFoundError(
-            f"Feature build completed but {feats_path} is still missing. "
-            "Please re-run **Update dataset & retrain**."
-        )
-    return feats_path
-
-
-def _build_labels(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
+def _ensure_labels(df: pd.DataFrame) -> pd.Series:
     """
-    Return (labels_0_1_2, mask_valid_rows).
-    Prefer numeric 'target' → map 'FTR' → derive from 'FTHG'/'FTAG'.
-    Drop rows that still lack a valid label.
+    Return a Series of integer labels {H:0, D:1, A:2}.
+    Prefer 'FTR' if present; otherwise derive from goals.
     """
-    y = pd.Series(np.nan, index=df.index, dtype="float")
-
-    # 1) numeric 'target'
-    if "target" in df.columns:
-        y = pd.to_numeric(df["target"], errors="coerce")
-
-    # 2) map FTR where y is NaN
     if "FTR" in df.columns:
-        mapped = df["FTR"].map({"H": 0, "D": 1, "A": 2})
-        y = y.where(~y.isna(), mapped)
+        y = df["FTR"].map({"H": 0, "D": 1, "A": 2})
+        if y.isna().any():
+            raise KeyError("FTR has unexpected values; expected only H/D/A.")
+        return y.astype(int)
 
-    # 3) derive from goals
-    if ("FTHG" in df.columns) and ("FTAG" in df.columns):
-        need = y.isna()
-        if need.any():
-            hg = pd.to_numeric(df.loc[need, "FTHG"], errors="coerce")
-            ag = pd.to_numeric(df.loc[need, "FTAG"], errors="coerce")
-            y.loc[need] = np.where(hg > ag, 0, np.where(hg < ag, 2, 1))
-
-    valid = y.isin([0, 1, 2])
-    if valid.sum() == 0:
-        raise KeyError(
-            "No usable labels found in features.parquet (need one of: numeric 'target', 'FTR', or 'FTHG' & 'FTAG')."
+    if {"FTHG", "FTAG"}.issubset(df.columns):
+        res = np.where(
+            df["FTHG"].values > df["FTAG"].values, 0,
+            np.where(df["FTHG"].values < df["FTAG"].values, 2, 1)
         )
-    return y[valid].astype(int), valid
+        return pd.Series(res, index=df.index, name="FTR_derived").astype(int)
+
+    raise KeyError("No label found. Need 'FTR' (H/D/A), or 'FTHG' & 'FTAG' to derive it.")
 
 
 def _select_features(df: pd.DataFrame) -> List[str]:
-    expected = _expected_feature_order()
-    cols = [c for c in expected if c in df.columns]
-    if len(cols) < 6:
-        raise KeyError(
-            "Too few training features found. "
-            f"Expected a subset of {expected}, got {cols}. Rebuild features from the app."
-        )
-    return cols
+    """
+    Choose model features from features.parquet.
+    Exclude identifiers / labels; keep numeric columns only.
+    """
+    exclude = {"FTR", "FTHG", "FTAG", "HomeTeam", "AwayTeam", "Date"}
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    feats = [c for c in numeric_cols if c not in exclude]
+    if not feats:
+        raise ValueError("No numeric feature columns found after exclusion.")
+    return feats
 
 
-def train() -> Tuple[float, float, dict]:
-    feats_path = _ensure_features_exist()
-    df = pd.read_parquet(feats_path)
+def _build_pipeline() -> Pipeline:
+    """
+    Impute NaNs (median) -> scale -> logistic regression.
 
-    # Labels + mask
-    y, mask = _build_labels(df)
-
-    # Features
-    feature_order = _select_features(df)
-    X = df.loc[mask, feature_order].copy().astype(float)
-    X = X.fillna(X.mean(numeric_only=True))  # LR can't handle NaN
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        X.values, y.values, test_size=0.2, random_state=42, stratify=y.values
-    )
-
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("logreg", LogisticRegression(
-            max_iter=2000,
-            multi_class="multinomial",
-            C=1.0,
+    We intentionally avoid the deprecated ``multi_class`` argument so the
+    model remains compatible with newer scikit-learn releases.
+    """
+    return Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler(with_mean=True)),
+        ("clf", LogisticRegression(
+            solver="lbfgs",
+            max_iter=3000,
+            random_state=42,
         )),
     ])
 
+
+def _time_split(df: pd.DataFrame, test_frac: float = 0.2) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Chronological split to simulate forward-in-time evaluation.
+    """
+    if "Date" not in df.columns:
+        raise KeyError("Expected 'Date' column to do time split.")
+    dfx = df.sort_values("Date").reset_index(drop=True)
+    n = len(dfx)
+    if n < 10:
+        raise ValueError("Need at least 10 matches to train a stable model.")
+    cut = min(max(1, int(n * (1 - test_frac))), n - 1)
+    return dfx.iloc[:cut].copy(), dfx.iloc[cut:].copy()
+
+
+def train() -> Tuple[float, float, Dict]:
+    """
+    Trains the model, evaluates on a time split, and saves the bundle.
+
+    Returns:
+        (accuracy, logloss, meta_dict)
+    """
+    feats_fp = DATA_PROC / "features.parquet"
+    if not feats_fp.exists():
+        raise FileNotFoundError(f"{feats_fp} not found. Run feature builder first.")
+
+    df = pd.read_parquet(feats_fp)
+
+    y_series = _ensure_labels(df)
+    if y_series.nunique() < 2:
+        raise ValueError("Training data must contain at least two outcome classes.")
+
+    feature_cols = _select_features(df)
+
+    train_df, test_df = _time_split(df, test_frac=0.2)
+    y_train = _ensure_labels(train_df)
+    y_test = _ensure_labels(test_df)
+
+    X_train = train_df[feature_cols].copy()
+    X_test = test_df[feature_cols].copy()
+
+    pipe = _build_pipeline()
     pipe.fit(X_train, y_train)
 
-    proba_val = pipe.predict_proba(X_val)
-    acc = accuracy_score(y_val, proba_val.argmax(axis=1))
-    ll = log_loss(y_val, proba_val, labels=[0, 1, 2])
+    y_pred = pipe.predict(X_test)
+    y_proba = pipe.predict_proba(X_test)
 
-    feature_means = pd.Series(X.mean(numeric_only=True), index=feature_order).to_dict()
+    acc = float(accuracy_score(y_test, y_pred))
+    try:
+        ll = float(log_loss(y_test, y_proba))
+    except ValueError:
+        ll = float(log_loss(y_test, y_proba, labels=TARGET_LABELS))
+
+    feature_means = X_train.mean(numeric_only=True).to_dict()
+
+    meta = {
+        "accuracy_time_split": acc,
+        "logloss_time_split": ll,
+        "n_train": int(len(train_df)),
+        "n_test": int(len(test_df)),
+        "features": feature_cols,
+        "model": "SimpleImputer(median) -> StandardScaler -> LogisticRegression(lbfgs)",
+        "class_labels": TARGET_LABELS,
+        "train_date_range": [
+            str(train_df["Date"].min().date()),
+            str(train_df["Date"].max().date()),
+        ],
+        "test_date_range": [
+            str(test_df["Date"].min().date()),
+            str(test_df["Date"].max().date()),
+        ],
+    }
 
     bundle = {
         "pipeline": pipe,
-        "feature_order": feature_order,
+        "feature_order": feature_cols,
         "feature_means": feature_means,
-        "meta": {
-            "classes": [0, 1, 2],
-            "n_samples": int(X.shape[0]),
-            "val_acc": float(acc),
-            "val_logloss": float(ll),
-        },
+        "meta": meta,
     }
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(bundle, MODEL_PATH)
 
-    model_path = Path(CONFIG["model_path"])
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(bundle, model_path)
+    print(f"Time-split Accuracy: {acc:.3f} | LogLoss: {ll:.3f} | Features: {len(feature_cols)}")
+    return acc, ll, meta
 
-    return float(acc), float(ll), bundle["meta"]
+
+if __name__ == "__main__":
+    train()
