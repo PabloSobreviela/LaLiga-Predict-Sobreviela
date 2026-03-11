@@ -76,16 +76,17 @@ header {visibility: hidden;}
   padding: .7rem 1.5rem !important; border-radius: 6px !important; font-size: 1rem !important;
 }
 .stSelectbox div[data-baseweb="select"], .stTextInput input, .stNumberInput input {
-  border-radius: 6px !important; border-color: #2d3748 !important;
-  background-color: #e2e8f0 !important; color: #1a202c !important;
+  border-radius: 6px !important; border: 1px solid #2d3748 !important;
+  background-color: #252d3a !important; color: #e2e8f0 !important;
 }
-div[data-baseweb="select"] > div { background-color: #e2e8f0 !important; color: #1a202c !important; }
-[data-testid="stDataFrame"] { background-color: #e2e8f0 !important; }
-[data-testid="stDataFrame"] div[data-testid="stDataFrameResizable"] { background-color: #e2e8f0 !important; }
-[data-testid="stExpander"] { background-color: #e2e8f0 !important; border-radius: 6px; }
-[data-testid="stExpander"] details, [data-testid="stExpander"] summary, [data-testid="stExpander"] > div { background-color: #e2e8f0 !important; }
-.stMultiSelect div[data-baseweb="select"] { background-color: #e2e8f0 !important; }
-.stMultiSelect span[data-baseweb="tag"] { background-color: #cbd5e0 !important; color: #1a202c !important; }
+div[data-baseweb="select"] > div { background-color: #252d3a !important; color: #e2e8f0 !important; border-radius: 6px !important; }
+[data-testid="stDataFrame"] { background-color: #252d3a !important; border: 1px solid #2d3748 !important; border-radius: 8px !important; overflow: hidden; }
+[data-testid="stDataFrame"] div[data-testid="stDataFrameResizable"] { background-color: #252d3a !important; border-radius: 8px !important; }
+[data-testid="stExpander"] { background-color: #252d3a !important; border: 1px solid #2d3748 !important; border-radius: 8px !important; }
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary, [data-testid="stExpander"] > div { background-color: #252d3a !important; color: #e2e8f0 !important; }
+[data-testid="stExpander"] summary { border-radius: 8px !important; }
+.stMultiSelect div[data-baseweb="select"] { background-color: #252d3a !important; border-radius: 6px !important; }
+.stMultiSelect span[data-baseweb="tag"] { background-color: #1a202c !important; color: #e2e8f0 !important; border-radius: 4px !important; }
 .stButton > button[kind="primary"] { background: #2b6cb0 !important; color: #e2e8f0 !important; font-weight: 700 !important; }
 div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
 .match-display { display: flex; align-items: center; justify-content: center; width: 100%; margin: 0 auto; }
