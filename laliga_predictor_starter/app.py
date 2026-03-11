@@ -54,7 +54,7 @@ header {visibility: hidden;}
 }
 .metric-item .label { font-size: .65rem; color: #718096; text-transform: uppercase; }
 .metric-item .val { font-size: 1.1rem; font-weight: 700; color: #f7fafc; }
-.outcome-row { display: flex; gap: .5rem; margin: .75rem 0; }
+.outcome-row { display: flex; gap: .5rem; margin: .75rem 0; justify-content: center; }
 .outcome-box {
   flex: 1; background: #252d3a; border: 1px solid #2d3748; border-radius: 6px;
   padding: .6rem .8rem; text-align: center;
@@ -178,7 +178,7 @@ def render_metric_cards(metrics: List[Tuple[str, str, str]]) -> None:
 
 
 def render_probability_cards(probabilities: List[float], fair_lines: List[float], winner_idx: int) -> None:
-    labels = [("Home", probabilities[0], fair_lines[0]), ("Draw", probabilities[1], fair_lines[1]), ("Away", probabilities[2], fair_lines[2])]
+    labels = [("T1", probabilities[0], fair_lines[0]), ("X", probabilities[1], fair_lines[1]), ("T2", probabilities[2], fair_lines[2])]
     boxes = []
     for i, (label, prob, fair_line) in enumerate(labels):
         cls = " outcome-box winner" if i == winner_idx else " outcome-box"
@@ -214,6 +214,9 @@ def is_alias_match(team_a: str, team_b: str, alias_lookup: Dict[str, Set[str]]) 
     return bool(a_aliases.intersection(b_aliases))
 
 
+DEFAULT_ODDS_API_KEY = "f966622cfeab29bf23d64720a3e97e19"
+
+
 def get_odds_api_key() -> str:
     api_key = st.session_state.get("odds_api_key", "")
     if not api_key:
@@ -223,6 +226,8 @@ def get_odds_api_key() -> str:
             api_key = ""
     if not api_key:
         api_key = os.environ.get("ODDS_API_KEY", "")
+    if not api_key:
+        api_key = DEFAULT_ODDS_API_KEY
     return api_key
 
 
@@ -666,7 +671,7 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
 
-    # Match header with crests and full names
+    # Match header: Name, Shield, vs, Shield, Name — centered
     home_crest = get_crest_url(home)
     away_crest = get_crest_url(away)
     home_display = get_display_name(home)
@@ -676,16 +681,12 @@ with tab_main:
     away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:1.5rem;margin:.5rem 0 1rem;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:.5rem;">
-            {home_img}
-            <span style="font-weight:700;color:#f7fafc;">{home_display}</span>
-          </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:.5rem 0 1rem;flex-wrap:wrap;">
+          <span style="font-weight:700;color:#f7fafc;">{home_display}</span>
+          <span>{home_img}</span>
           <span style="font-weight:700;color:#718096;">vs</span>
-          <div style="display:flex;align-items:center;gap:.5rem;">
-            {away_img}
-            <span style="font-weight:700;color:#f7fafc;">{away_display}</span>
-          </div>
+          <span>{away_img}</span>
+          <span style="font-weight:700;color:#f7fafc;">{away_display}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -699,9 +700,6 @@ with tab_main:
         odds_home = odds_draw = odds_away = None
         if use_market:
             market_weight = st.slider("Market weight", min_value=0.0, max_value=1.0, value=0.25, step=0.05)
-            api_key_ui = st.text_input("Odds API key", value=st.session_state.get("odds_api_key", ""), type="password", help="Session only.")
-            if api_key_ui:
-                st.session_state["odds_api_key"] = api_key_ui
             if "odds_values" not in st.session_state:
                 st.session_state["odds_values"] = DEFAULT_ODDS.copy()
             if st.button("Fetch live odds", key="btn_fetch_odds"):
@@ -714,9 +712,9 @@ with tab_main:
                     st.warning(reason or "Could not fetch odds.")
             ov = st.session_state["odds_values"]
             c1, c2, c3 = st.columns(3)
-            odds_home = c1.number_input("Home", min_value=1.01, value=float(ov["H"]), step=0.01, format="%.2f")
-            odds_draw = c2.number_input("Draw", min_value=1.01, value=float(ov["D"]), step=0.01, format="%.2f")
-            odds_away = c3.number_input("Away", min_value=1.01, value=float(ov["A"]), step=0.01, format="%.2f")
+            odds_home = c1.number_input("T1", min_value=1.01, value=float(ov["H"]), step=0.01, format="%.2f")
+            odds_draw = c2.number_input("X", min_value=1.01, value=float(ov["D"]), step=0.01, format="%.2f")
+            odds_away = c3.number_input("T2", min_value=1.01, value=float(ov["A"]), step=0.01, format="%.2f")
 
     if home and away and not predict_clicked:
         with st.expander("Team comparison"):
