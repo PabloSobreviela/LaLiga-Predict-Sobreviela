@@ -11,6 +11,7 @@ import streamlit as st
 
 import src.features as F
 from src.config import CONFIG
+from src.team_display import get_crest_url, get_display_name
 from src.train_model import train as train_model, evaluate_bundle
 
 DATA_RAW = Path(CONFIG["raw_data_path"])
@@ -20,8 +21,8 @@ FEATURES_PATH = DATA_PROC / "features.parquet"
 TEAM_STATE_PATH = DATA_PROC / "team_state.parquet"
 
 st.set_page_config(
-    page_title="LaLiga Match Predictor",
-    page_icon="⚽",
+    page_title="LALIGA Match Predictor",
+    page_icon="https://assets.laliga.com/assets/logos/LL_RGB_h_color/LL_RGB_h_color.png",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -152,14 +153,17 @@ def artifact_status() -> Dict[str, bool]:
     }
 
 
+LALIGA_LOGO_URL = "https://assets.laliga.com/assets/logos/LALIGA_RGB_h_color/LALIGA_RGB_h_color.png"
+
+
 def render_hero(meta: Dict) -> None:
     season_text = ", ".join(meta.get("seasons_used", [])) if meta.get("seasons_used") else "—"
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
-          <span style="font-size:2rem;">⚽</span>
+        <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
+          <img src="{LALIGA_LOGO_URL}" alt="LALIGA" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none'"/>
           <div>
-            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">LaLiga Match Predictor</h1>
+            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">LALIGA Match Predictor</h1>
             <span style="font-size:.85rem;color:#718096;">Seasons: {season_text} · Elo + form · football-data.co.uk</span>
           </div>
         </div>
@@ -638,12 +642,51 @@ with tab_main:
     st.markdown(f'<p class="section-label" style="margin-top:1.25rem;">2. Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
     col_home, col_vs, col_away = st.columns([2, 0.4, 2])
     with col_home:
-        home = st.selectbox("Home", teams, index=0, key="home_team_ui", label_visibility="collapsed")
+        home = st.selectbox(
+            "Home",
+            teams,
+            index=0,
+            key="home_team_ui",
+            label_visibility="collapsed",
+            format_func=lambda t: get_display_name(t),
+        )
     with col_vs:
         st.markdown('<div style="text-align:center;padding-top:1.5rem;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
     with col_away:
         away_options = [t for t in teams if t != home]
-        away = st.selectbox("Away", away_options if away_options else teams, index=0, key="away_team_ui", label_visibility="collapsed")
+        away = st.selectbox(
+            "Away",
+            away_options if away_options else teams,
+            index=0,
+            key="away_team_ui",
+            label_visibility="collapsed",
+            format_func=lambda t: get_display_name(t),
+        )
+
+    # Match header with crests and full names
+    home_crest = get_crest_url(home)
+    away_crest = get_crest_url(away)
+    home_display = get_display_name(home)
+    away_display = get_display_name(away)
+    crest_style = "height:36px;width:36px;object-fit:contain;"
+    home_img = f'<img src="{home_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if home_crest else ""
+    away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:center;justify-content:center;gap:1.5rem;margin:.5rem 0 1rem;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            {home_img}
+            <span style="font-weight:700;color:#f7fafc;">{home_display}</span>
+          </div>
+          <span style="font-weight:700;color:#718096;">vs</span>
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            {away_img}
+            <span style="font-weight:700;color:#f7fafc;">{away_display}</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
 
@@ -676,8 +719,8 @@ with tab_main:
         with st.expander("Team comparison"):
             team_compare = pd.DataFrame({
                 "Metric": ["Elo", "Goals for (last 5)", "Goal diff (last 5)", "Rest days"],
-                home: [round(float(ts.loc[home, "elo"]), 1), round(float(ts.loc[home, "team_last_gf"]), 2), round(float(ts.loc[home, "team_last_gd"]), 2), round(float(ts.loc[home, "team_rest_days"]), 1)],
-                away: [round(float(ts.loc[away, "elo"]), 1), round(float(ts.loc[away, "team_last_gf"]), 2), round(float(ts.loc[away, "team_last_gd"]), 2), round(float(ts.loc[away, "team_rest_days"]), 1)],
+                get_display_name(home): [round(float(ts.loc[home, "elo"]), 1), round(float(ts.loc[home, "team_last_gf"]), 2), round(float(ts.loc[home, "team_last_gd"]), 2), round(float(ts.loc[home, "team_rest_days"]), 1)],
+                get_display_name(away): [round(float(ts.loc[away, "elo"]), 1), round(float(ts.loc[away, "team_last_gf"]), 2), round(float(ts.loc[away, "team_last_gd"]), 2), round(float(ts.loc[away, "team_rest_days"]), 1)],
             })
             st.dataframe(team_compare, use_container_width=True, hide_index=True)
     if predict_clicked:
