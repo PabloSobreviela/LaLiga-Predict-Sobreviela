@@ -659,7 +659,7 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
     with col_vs:
-        st.markdown('<div style="display:flex;align-items:center;justify-content:center;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
+        st.markdown('<div style="display:flex;align-items:center;justify-content:center;font-weight:700;color:#718096;">VS</div>', unsafe_allow_html=True)
     with col_away:
         away_options = [t for t in teams if t != home]
         away_idx = away_options.index("Real Madrid") if "Real Madrid" in away_options else 0
@@ -672,30 +672,35 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
 
-    # Match header: Name, Shield, vs, Shield, Name — centered
+    # La Liga match format: Crest | Team Name | VS | Team Name | Crest — centered
     home_crest = get_crest_url(home)
     away_crest = get_crest_url(away)
     home_display = get_display_name(home)
     away_display = get_display_name(away)
-    crest_style = "height:36px;width:36px;object-fit:contain;"
+    crest_style = "height:40px;width:40px;object-fit:contain;vertical-align:middle;"
     home_img = f'<img src="{home_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if home_crest else ""
     away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:1rem;margin:.5rem 0 1rem;flex-wrap:wrap;">
-          <span style="font-weight:700;color:#f7fafc;">{home_display}</span>
-          <span>{home_img}</span>
-          <span style="font-weight:700;color:#718096;">vs</span>
-          <span>{away_img}</span>
-          <span style="font-weight:700;color:#f7fafc;">{away_display}</span>
+        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <span>{home_img}</span>
+            <span style="font-weight:700;font-size:1.1rem;color:#f7fafc;">{home_display}</span>
+          </div>
+          <span style="font-weight:800;font-size:1rem;color:#718096;letter-spacing:.1em;">VS</span>
+          <div style="display:flex;align-items:center;gap:.5rem;">
+            <span>{away_img}</span>
+            <span style="font-weight:700;font-size:1.1rem;color:#f7fafc;">{away_display}</span>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    _, btn_col, _ = st.columns([1, 2, 1])
+    # Generate prediction button — bottom right
+    btn_spacer, btn_col = st.columns([3, 1])
     with btn_col:
-        predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
+        predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary", use_container_width=True)
 
     with st.expander("Blend with bookmaker odds (optional)"):
         use_market = st.toggle("Blend live bookmaker odds", value=False, help="Weight the model with normalized 1X2 market odds.")
