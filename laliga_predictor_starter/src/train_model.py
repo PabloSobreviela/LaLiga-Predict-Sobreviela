@@ -8,42 +8,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import HistGradientBoostingClassifier, VotingClassifier
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import accuracy_score, log_loss, precision_score
-from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.class_weight import compute_sample_weight
 
 from src.config import CONFIG
-
-
-class _HGBMultiSeedEnsemble(BaseEstimator, ClassifierMixin):
-    """Ensemble of HistGradientBoostingClassifier with different random seeds."""
-
-    def __init__(self, n_models: int = 5, seeds: List[int] = None, **hgb_params):
-        self.n_models = n_models
-        self.seeds = seeds or list(range(42, 42 + n_models))
-        self.hgb_params = {k: v for k, v in hgb_params.items() if k != "random_state"}
-        self.models_: List[HistGradientBoostingClassifier] = []
-
-    def fit(self, X, y, sample_weight=None):
-        check_classification_targets(y)
-        self.models_ = []
-        for s in self.seeds[: self.n_models]:
-            m = HistGradientBoostingClassifier(**self.hgb_params, random_state=s)
-            if sample_weight is not None:
-                m.fit(X, y, sample_weight=sample_weight)
-            else:
-                m.fit(X, y)
-            self.models_.append(m)
-        self.classes_ = self.models_[0].classes_
-        return self
-
-    def predict_proba(self, X):
-        probs = np.stack([m.predict_proba(X) for m in self.models_]).mean(axis=0)
-        return probs
-
-    def predict(self, X):
-        return np.argmax(self.predict_proba(X), axis=1)
+from src.ensemble import HGBMultiSeedEnsemble
 
 DATA_PROC = Path(CONFIG["processed_data_path"])
 MODEL_PATH = Path(CONFIG["model_path"])
@@ -108,7 +77,7 @@ def _build_pipeline(max_iter: int = DEFAULT_MAX_ITER, **clf_overrides) -> Pipeli
         "random_state": 42,
     }
     if clf_type == "hgb_multi":
-        clf = _HGBMultiSeedEnsemble(
+        clf = HGBMultiSeedEnsemble(
             n_models=10,
             seeds=[42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
             **hgb_params,
@@ -256,6 +225,45 @@ def train(max_iter: int = DEFAULT_MAX_ITER, test_frac: float = DEFAULT_TEST_FRAC
 
     print(f"Time-split Accuracy: {acc:.3f} | Precision: {prec:.3f} | LogLoss: {ll:.3f} | Features: {len(feature_cols)}")
     return acc, ll, meta
+
+
+def evaluate_bundle(bundle: Dict, test_frac: float = DEFAULT_TEST_FRAC) -> Tuple[float, float, float]:
+    """
+    Evaluate a loaded model bundle on features.parquet using the SAME time split as training.
+    Returns (accuracy, precision, logloss). Use this for displayed metrics so local test
+    and app show identical numbers.
+    """
+    feats_fp = DATA_PROC / "features.parquet"
+    if not feats_fp.exists():
+        return 0.0, 0.0, 0.0
+    df = pd.read_parquet(feats_fp)
+    y_series = _ensure_labels(df)
+    if y_series.nunique() < 2:
+        return 0.0, 0.0, 0.0
+    feature_order = bundle["feature_order"]
+    feature_means = bundle.get("feature_means", {})
+    train_df, test_df = _time_split(df, test_frac=test_frac)
+    y_test = _ensure_labels(test_df)
+    cols_present = [c for c in feature_order if c in test_df.columns]
+    cols_missing = [c for c in feature_order if c not in test_df.columns]
+    if cols_missing:
+        fill = pd.DataFrame(
+            {c: feature_means.get(c, 0.0) for c in cols_missing},
+            index=test_df.index,
+        )
+        X_test = pd.concat([test_df[cols_present], fill], axis=1)[feature_order]
+    else:
+        X_test = test_df[feature_order].copy()
+    pipe = bundle["pipeline"]
+    y_pred = pipe.predict(X_test)
+    y_proba = pipe.predict_proba(X_test)
+    acc = float(accuracy_score(y_test, y_pred))
+    prec = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
+    try:
+        ll = float(log_loss(y_test, y_proba))
+    except ValueError:
+        ll = float(log_loss(y_test, y_proba, labels=TARGET_LABELS))
+    return acc, prec, ll
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import streamlit as st
 
 import src.features as F
 from src.config import CONFIG
-from src.train_model import train as train_model
+from src.train_model import train as train_model, evaluate_bundle
 
 DATA_RAW = Path(CONFIG["raw_data_path"])
 DATA_PROC = Path(CONFIG["processed_data_path"])
@@ -129,7 +129,10 @@ def label_to_season_code(label: str) -> str:
 
 
 def available_season_codes() -> List[str]:
-    return ["2122", "2223", "2324", "2425", "2526"]
+    base = CONFIG.get("seasons", ["2122", "2223", "2324", "2425"])
+    if "2526" not in base:
+        return base + ["2526"]  # Add current for prediction dropdown
+    return base
 
 
 def fair_odds(probabilities: List[float]) -> List[float]:
@@ -358,11 +361,19 @@ def download_missing_seasons(season_codes: List[str]) -> List[str]:
 @st.cache_resource
 def load_bundle():
     bundle = joblib.load(MODEL_PATH)
+    meta = bundle.get("meta", {})
+    # Recompute accuracy on current data with same split as training — ensures displayed = actual
+    if FEATURES_PATH.exists():
+        try:
+            acc, prec, ll = evaluate_bundle(bundle)
+            meta = {**meta, "accuracy_time_split": acc, "precision_time_split": prec, "logloss_time_split": ll}
+        except Exception:
+            pass
     return (
         bundle["pipeline"],
         bundle["feature_order"],
         bundle.get("feature_means", {}),
-        bundle.get("meta", {}),
+        meta,
     )
 
 
@@ -549,7 +560,7 @@ if not teams:
 alias_lookup = build_alias_lookup(teams)
 
 render_metric_cards([
-    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 80/20"),
+    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 83/17"),
     ("Precision", f"{meta.get('precision_time_split', 0.0):.3f}", "Macro avg"),
     ("Log loss", f"{meta.get('logloss_time_split', 0.0):.3f}", "Lower is better"),
     ("Teams", str(len(teams)), f"Active in {season_code_to_label(predict_season)}"),
