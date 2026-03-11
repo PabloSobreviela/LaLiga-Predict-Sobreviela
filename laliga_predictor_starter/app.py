@@ -81,7 +81,10 @@ header {visibility: hidden;}
 .stButton > button[kind="primary"] { background: #2b6cb0 !important; color: white !important; font-weight: 700 !important; }
 div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
 .match-display { display: flex; align-items: center; justify-content: center; width: 100%; margin: 0 auto; }
-.match-display-inner { display: flex; align-items: center; justify-content: center; gap: 1.25rem; flex-wrap: wrap; }
+.match-display-inner { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 600px; }
+.match-left { flex: 1; display: flex; justify-content: flex-end; align-items: center; gap: .5rem; padding-right: 1rem; }
+.match-vs { flex: 0 0 auto; font-weight: 800; color: #718096; letter-spacing: .1em; }
+.match-right { flex: 1; display: flex; justify-content: flex-start; align-items: center; gap: .5rem; padding-left: 1rem; }
 """
 st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
 
@@ -686,12 +689,12 @@ with tab_main:
         f"""
         <div class="match-display" style="margin:1rem 0;">
           <div class="match-display-inner">
-            <div style="display:flex;align-items:center;gap:.5rem;">
+            <div class="match-left">
               <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{home_display}</span>
               <span>{home_img}</span>
             </div>
-            <span style="font-weight:800;font-size:1rem;color:#718096;letter-spacing:.1em;">VS</span>
-            <div style="display:flex;align-items:center;gap:.5rem;">
+            <span class="match-vs" style="font-size:1rem;">VS</span>
+            <div class="match-right">
               <span>{away_img}</span>
               <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{away_display}</span>
             </div>
