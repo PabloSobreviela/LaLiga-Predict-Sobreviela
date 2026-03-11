@@ -4,10 +4,13 @@
 
 End-to-end football match outcome predictor for LaLiga (H/D/A) with optional blend of real bookmaker odds. Clean Streamlit UI, reproducible training pipeline, and simple deployment.
 
+> **~63% accuracy** on held-out 83/17 time-split (no future leakage). Measured on last 17% of matches by date.
+
 ---
 
 ## Features
 
+- **~63% accuracy** on held-out time-split (measurable, reproducible)
 - **Predict H/D/A** with calibrated probabilities and fair odds (1/p)
 - **Live odds (optional)** via The Odds API (1X2) with alias matching (e.g. FC Barcelona and Barcelona)
 - **One-click retraining** in the UI: select seasons, auto-download CSVs, build features, train and save
