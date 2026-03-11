@@ -21,7 +21,7 @@ FEATURES_PATH = DATA_PROC / "features.parquet"
 TEAM_STATE_PATH = DATA_PROC / "team_state.parquet"
 
 st.set_page_config(
-    page_title="LALIGA Match Predictor",
+    page_title="Match Predictor",
     page_icon="https://assets.laliga.com/assets/logos/LL_RGB_h_color/LL_RGB_h_color.png",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -163,7 +163,7 @@ def render_hero(meta: Dict) -> None:
         <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
           <img src="{LALIGA_LOGO_URL}" alt="LALIGA" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none'"/>
           <div>
-            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">LALIGA Match Predictor</h1>
+            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">Match Predictor</h1>
             <span style="font-size:.85rem;color:#718096;">Seasons: {season_text} · Elo + form · football-data.co.uk</span>
           </div>
         </div>
@@ -640,12 +640,14 @@ with tab_main:
         st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
     st.markdown(f'<p class="section-label" style="margin-top:1.25rem;">2. Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
+    # Default to El Clásico: Barcelona vs Real Madrid
+    home_idx = teams.index("Barcelona") if "Barcelona" in teams else 0
     col_home, col_vs, col_away = st.columns([2, 0.4, 2])
     with col_home:
         home = st.selectbox(
             "Home",
             teams,
-            index=0,
+            index=home_idx,
             key="home_team_ui",
             label_visibility="collapsed",
             format_func=lambda t: get_display_name(t),
@@ -654,10 +656,11 @@ with tab_main:
         st.markdown('<div style="text-align:center;padding-top:1.5rem;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
     with col_away:
         away_options = [t for t in teams if t != home]
+        away_idx = away_options.index("Real Madrid") if "Real Madrid" in away_options else 0
         away = st.selectbox(
             "Away",
             away_options if away_options else teams,
-            index=0,
+            index=away_idx,
             key="away_team_ui",
             label_visibility="collapsed",
             format_func=lambda t: get_display_name(t),
