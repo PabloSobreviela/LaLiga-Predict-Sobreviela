@@ -648,7 +648,7 @@ with tab_main:
     st.markdown(f'<p class="section-label" style="margin-top:1.25rem;">2. Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
     # Default to El Clásico: Barcelona vs Real Madrid
     home_idx = teams.index("Barcelona") if "Barcelona" in teams else 0
-    col_home, col_vs, col_away = st.columns([2, 0.4, 2])
+    col_home, col_vs, col_away = st.columns([2, 0.4, 2], vertical_alignment="center")
     with col_home:
         home = st.selectbox(
             "Home",
@@ -659,7 +659,7 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
     with col_vs:
-        st.markdown('<div style="text-align:center;padding-top:1.5rem;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
+        st.markdown('<div style="display:flex;align-items:center;justify-content:center;font-weight:700;color:#718096;">vs</div>', unsafe_allow_html=True)
     with col_away:
         away_options = [t for t in teams if t != home]
         away_idx = away_options.index("Real Madrid") if "Real Madrid" in away_options else 0
@@ -693,7 +693,9 @@ with tab_main:
         unsafe_allow_html=True,
     )
 
-    predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
+    _, btn_col, _ = st.columns([1, 2, 1])
+    with btn_col:
+        predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
 
     with st.expander("Blend with bookmaker odds (optional)"):
         use_market = st.toggle("Blend live bookmaker odds", value=False, help="Weight the model with normalized 1X2 market odds.")
