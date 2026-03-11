@@ -53,7 +53,7 @@ header {visibility: hidden;}
   padding: .5rem .75rem; flex: 1; min-width: 100px;
 }
 .metric-item .label { font-size: .65rem; color: #718096; text-transform: uppercase; }
-.metric-item .val { font-size: 1.1rem; font-weight: 700; color: #f7fafc; }
+.metric-item .val { font-size: 1.1rem; font-weight: 700; color: #e2e8f0; }
 .outcome-row { display: flex; gap: .5rem; margin: .75rem 0; justify-content: center; }
 .outcome-box {
   flex: 1; background: #252d3a; border: 1px solid #2d3748; border-radius: 6px;
@@ -61,24 +61,24 @@ header {visibility: hidden;}
 }
 .outcome-box.winner { border-color: #F9A01B; background: #2d2a1f; }
 .outcome-box .label { font-size: .75rem; color: #a0aec0; }
-.outcome-box .pct { font-size: 1.4rem; font-weight: 800; color: #f7fafc; }
+.outcome-box .pct { font-size: 1.4rem; font-weight: 800; color: #e2e8f0; }
 .outcome-box .odds { font-size: .7rem; color: #718096; }
 .result-bar {
   padding: .8rem 1rem; border-radius: 6px; font-weight: 700; font-size: 1.1rem;
-  background: #1e3a5f; border-left: 4px solid #F9A01B; color: #f7fafc;
+  background: #1e3a5f; border-left: 4px solid #F9A01B; color: #e2e8f0;
 }
 .train-primary {
   background: #F9A01B !important; color: #0f1419 !important; font-weight: 700 !important;
   padding: .65rem 1.2rem !important; border-radius: 6px !important;
 }
 .predict-primary {
-  background: #2b6cb0 !important; color: white !important; font-weight: 700 !important;
+  background: #2b6cb0 !important; color: #e2e8f0 !important; font-weight: 700 !important;
   padding: .7rem 1.5rem !important; border-radius: 6px !important; font-size: 1rem !important;
 }
 .stSelectbox div[data-baseweb="select"], .stTextInput input, .stNumberInput input {
   border-radius: 6px !important; border-color: #2d3748 !important;
 }
-.stButton > button[kind="primary"] { background: #2b6cb0 !important; color: white !important; font-weight: 700 !important; }
+.stButton > button[kind="primary"] { background: #2b6cb0 !important; color: #e2e8f0 !important; font-weight: 700 !important; }
 div[data-testid="stVerticalBlock"]:has([data-testid="stButton"]) .stButton > button { border-radius: 6px !important; }
 .match-display { display: flex; align-items: center; justify-content: center; width: 100%; margin: 0 auto; }
 .match-display-inner { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 600px; }
@@ -169,7 +169,7 @@ def render_hero(meta: Dict) -> None:
         <div style="display:flex;align-items:center;gap:1.25rem;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #2d3748;">
           <img src="{LALIGA_LOGO_URL}" alt="LALIGA" style="height:48px;width:auto;object-fit:contain;" onerror="this.style.display='none'"/>
           <div>
-            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#f7fafc;">Match Predictor</h1>
+            <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#e2e8f0;">Match Predictor</h1>
             <span style="font-size:.85rem;color:#718096;">Seasons: {season_text} · Elo + form · football-data.co.uk</span>
           </div>
         </div>
@@ -690,13 +690,13 @@ with tab_main:
         <div class="match-display" style="margin:1rem 0;">
           <div class="match-display-inner">
             <div class="match-left">
-              <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{home_display}</span>
+              <span style="font-weight:700;font-size:1.35rem;color:#e2e8f0;">{home_display}</span>
               <span>{home_img}</span>
             </div>
             <span class="match-vs" style="font-size:1rem;">VS</span>
             <div class="match-right">
               <span>{away_img}</span>
-              <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{away_display}</span>
+              <span style="font-weight:700;font-size:1.35rem;color:#e2e8f0;">{away_display}</span>
             </div>
           </div>
         </div>
