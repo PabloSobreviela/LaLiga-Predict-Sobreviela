@@ -5,7 +5,8 @@ _PKG_ROOT = Path(__file__).resolve().parent.parent
 
 CONFIG = {
     "league": "SP1",
-    "seasons": ["1314", "1415", "1516", "1617", "1819", "1920", "2021", "2122", "2223", "2324", "2425"],
+    # All available seasons (football-data.co.uk SP1) — user can select any subset in UI
+    "seasons": ["0910", "1011", "1112", "1213", "1314", "1415", "1516", "1617", "1819", "1920", "2021", "2122", "2223", "2324", "2425"],
     "raw_data_path": str(_PKG_ROOT / "data" / "raw"),
     "processed_data_path": str(_PKG_ROOT / "data" / "processed"),
     "model_path": str(_PKG_ROOT / "models" / "model.joblib"),

@@ -581,8 +581,14 @@ with tab_main:
 
     season_codes = available_season_codes()
     labels = [season_code_to_label(code) for code in season_codes]
-    default_train = [l for l in labels if l != "25/26"]
-    selected_labels = st.multiselect("Seasons to train on", options=labels, default=default_train, key="train_seasons")
+    default_train = [l for l in labels if l not in ("25/26",)]  # Exclude future season
+    selected_labels = st.multiselect(
+        "Seasons to train on",
+        options=labels,
+        default=default_train,
+        key="train_seasons",
+        help="Select one or more seasons. Download will fetch missing CSVs from football-data.co.uk.",
+    )
     selected_codes = [label_to_season_code(l) for l in selected_labels] or CONFIG.get("seasons", [])
     predict_label = st.selectbox("Prediction season", options=labels, index=labels.index("25/26") if "25/26" in labels else len(labels) - 1, key="predict_season")
     predict_code = label_to_season_code(predict_label)
