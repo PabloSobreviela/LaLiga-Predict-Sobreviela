@@ -765,21 +765,22 @@ with tab_main:
 with tab_about:
     st.markdown('<p class="section-label">About</p>', unsafe_allow_html=True)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    st.markdown("**LaLiga Match Predictor** — End-to-end H/D/A outcome predictor with optional blend of real bookmaker odds.")
+    st.markdown("**LaLiga Match Predictor.** End-to-end H/D/A outcome predictor with optional blend of real bookmaker odds.")
     st.markdown("**Live app:** [laliga-predict-sobreviela.streamlit.app](https://laliga-predict-sobreviela.streamlit.app/)")
     st.markdown("---")
     st.markdown("**How it works**")
-    st.markdown(f"""
+    st.markdown("""
     - **Model:** HistGradientBoostingClassifier ensemble (5 seeds averaged) with sample weights for class balance
-    - **Target:** H/D/A (Home / Draw / Away)
-    - **Features:** Elo ratings, rolling form (GF/GA/GD, shots on target, corners, fouls), rest days, engineered diffs
-    - **Data:** LaLiga SP1 CSVs from football-data.co.uk → Parquet
-    - **Split:** Time-based 83/17 (train on past, evaluate on future) — no future leakage
+    - **Target:** H/D/A (Home, Draw, Away)
+    - **Features:** Elo ratings (home, away, diff), rolling form over last 10 matches (goals for/against, shots on target, corners, fouls), rest days (home, away, diff), and engineered diffs
+    - **Data:** LaLiga SP1 CSVs from football-data.co.uk, stored as Parquet
+    - **Split:** Time-based 83/17: train on first 83% of matches by date, evaluate on last 17%. No future leakage.
     """)
-    st.markdown("**Accuracy** — Computed in `train_model.py` via chronological 83/17 time-split. The model is trained on the first 83% of matches (by date) and evaluated on the held-out 17%. No future leakage.")
-    st.markdown("**Odds** — Toggle \"Blend live bookmaker odds\" to use The Odds API (1X2). Aliases match team variants (e.g. FC Barcelona ↔ Barcelona).")
-    st.markdown("**Seasons** — Select 09/10–25/26. Missing CSVs are auto-downloaded from football-data.co.uk.")
+    st.markdown("**Accuracy.** Computed in train_model.py via chronological 83/17 time-split. The model trains on the first 83% of matches (by date) and is evaluated on the held-out 17%.")
+    st.markdown("**Odds.** Toggle \"Blend live bookmaker odds\" to use The Odds API (1X2). Aliases match team variants (e.g. FC Barcelona and Barcelona).")
+    st.markdown("**Seasons (new).** Select 09/10 to 25/26. Missing CSVs auto-download from football-data.co.uk.")
+    st.markdown("**La Liga branding (new).** Official logo, team crests, and display names with accents (Atlético de Madrid, Deportivo Alavés).")
     st.markdown("---")
-    st.markdown("**Credits:** football-data.co.uk · The Odds API · scikit-learn · Streamlit")
+    st.markdown("**Credits:** football-data.co.uk, The Odds API, scikit-learn, Streamlit")
     st.markdown("*Predictions are not financial advice.*")
     st.markdown('</div>', unsafe_allow_html=True)

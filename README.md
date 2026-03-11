@@ -9,20 +9,20 @@ End-to-end football match outcome predictor for LaLiga (H/D/A) with optional ble
 ## Features
 
 - **Predict H/D/A** with calibrated probabilities and fair odds (1/p)
-- **Live odds (optional)** via The Odds API (1X2) with alias matching (e.g. FC Barcelona ↔ Barcelona)
-- **One-click retraining** in the UI: select seasons → auto-download CSVs → build features → train and save
-- **La Liga branding**: official logo, team crests, display names with accents
-- **Seasons 09/10–25/26**: train on any subset; download missing data from football-data.co.uk
+- **Live odds (optional)** via The Odds API (1X2) with alias matching (e.g. FC Barcelona and Barcelona)
+- **One-click retraining** in the UI: select seasons, auto-download CSVs, build features, train and save
+- **La Liga branding (new):** official logo, team crests, display names with accents (Atlético de Madrid, Deportivo Alavés)
+- **Seasons 09/10 to 25/26 (new):** train on any subset from 16 seasons; missing CSVs download from football-data.co.uk
 
 ---
 
 ## How it works
 
 - **Model:** HistGradientBoostingClassifier ensemble (5 seeds averaged) with sample weights for class balance
-- **Target:** H/D/A (Home / Draw / Away)
-- **Features:** Elo ratings, rolling form (GF/GA/GD, shots on target, corners, fouls), rest days, engineered diffs
-- **Data:** LaLiga SP1 CSVs from football-data.co.uk → Parquet (features.parquet, team_state.parquet)
-- **Split:** Time-based 83/17 (train on past, evaluate on future) — no future leakage
+- **Target:** H/D/A (Home, Draw, Away)
+- **Features:** Elo ratings (home, away, diff), rolling form over last 10 matches (goals for/against, shots on target, corners, fouls), rest days (home, away, diff), and engineered diffs
+- **Data:** LaLiga SP1 CSVs from football-data.co.uk, stored as Parquet (features.parquet, team_state.parquet)
+- **Split:** Time-based 83/17: train on first 83% of matches by date, evaluate on last 17%. No future leakage.
 
 ---
 
@@ -34,9 +34,9 @@ laliga_predictor_starter/
 ├─ src/
 │  ├─ config.py              # Paths, seasons, Elo, model params
 │  ├─ features.py            # CSV ingestion, feature engineering, team_state
-│  ├─ train_model.py         # Train/evaluate pipeline, save bundle
+│  ├─ train_model.py         # Train, evaluate, save bundle
 │  ├─ ensemble.py            # HGBMultiSeedEnsemble
-│  └─ team_display.py        # Team names + crest URLs for UI
+│  └─ team_display.py        # Team names and crest URLs for UI
 ├─ data/
 │  ├─ raw/                   # SP1_*.csv per season
 │  └─ processed/             # features.parquet, team_state.parquet
@@ -67,7 +67,7 @@ laliga_predictor_starter/
    ```
 
 3. **Train in the UI**
-   - Select seasons (e.g. 09/10–24/25)
+   - Select seasons (e.g. 09/10 to 24/25)
    - Click **Download missing data and retrain**
    - Model is saved to `models/model.joblib`
 
@@ -76,8 +76,8 @@ laliga_predictor_starter/
 ## Odds integration (optional)
 
 - **Provider:** The Odds API (v4), market `h2h` (1X2)
-- **Usage:** Toggle "Blend live bookmaker odds" → Fetch live odds or enter manually
-- **Alias matching:** Handles variants (RCD Espanyol ↔ Espanyol, FC Barcelona ↔ Barcelona)
+- **Usage:** Toggle "Blend live bookmaker odds", then Fetch live odds or enter manually
+- **Alias matching:** Handles variants (RCD Espanyol and Espanyol, FC Barcelona and Barcelona)
 
 ---
 
