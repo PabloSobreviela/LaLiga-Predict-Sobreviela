@@ -7,7 +7,7 @@ from typing import Tuple, Dict, List
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import accuracy_score, log_loss
 
 from src.config import CONFIG
@@ -15,6 +15,9 @@ from src.config import CONFIG
 DATA_PROC = Path(CONFIG["processed_data_path"])
 MODEL_PATH = Path(CONFIG["model_path"])
 TARGET_LABELS = [0, 1, 2]
+
+# Boosting rounds for iterative learning (more = better fit, slower)
+DEFAULT_MAX_ITER = 300
 
 
 def _ensure_labels(df: pd.DataFrame) -> pd.Series:
@@ -51,19 +54,25 @@ def _select_features(df: pd.DataFrame) -> List[str]:
     return feats
 
 
-def _build_pipeline() -> Pipeline:
+def _build_pipeline(max_iter: int = DEFAULT_MAX_ITER) -> Pipeline:
     """
-    Impute NaNs (median) -> scale -> logistic regression.
+    Impute NaNs (median) -> scale -> HistGradientBoosting.
 
-    We intentionally avoid the deprecated ``multi_class`` argument so the
-    model remains compatible with newer scikit-learn releases.
+    Gradient boosting learns iteratively over many rounds, typically
+    achieving better accuracy than logistic regression on tabular data.
     """
     return Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler(with_mean=True)),
-        ("clf", LogisticRegression(
-            solver="lbfgs",
-            max_iter=3000,
+        ("clf", HistGradientBoostingClassifier(
+            max_iter=max_iter,
+            max_depth=6,
+            learning_rate=0.08,
+            min_samples_leaf=20,
+            l2_regularization=0.1,
+            early_stopping=True,
+            n_iter_no_change=15,
+            validation_fraction=0.12,
             random_state=42,
         )),
     ])
@@ -83,9 +92,10 @@ def _time_split(df: pd.DataFrame, test_frac: float = 0.2) -> Tuple[pd.DataFrame,
     return dfx.iloc[:cut].copy(), dfx.iloc[cut:].copy()
 
 
-def train() -> Tuple[float, float, Dict]:
+def train(max_iter: int = DEFAULT_MAX_ITER) -> Tuple[float, float, Dict]:
     """
-    Trains the model, evaluates on a time split, and saves the bundle.
+    Trains the model (gradient boosting over max_iter rounds), evaluates on a
+    time split, and saves the bundle.
 
     Returns:
         (accuracy, logloss, meta_dict)
@@ -109,7 +119,7 @@ def train() -> Tuple[float, float, Dict]:
     X_train = train_df[feature_cols].copy()
     X_test = test_df[feature_cols].copy()
 
-    pipe = _build_pipeline()
+    pipe = _build_pipeline(max_iter=max_iter)
     pipe.fit(X_train, y_train)
 
     y_pred = pipe.predict(X_test)
@@ -129,7 +139,7 @@ def train() -> Tuple[float, float, Dict]:
         "n_train": int(len(train_df)),
         "n_test": int(len(test_df)),
         "features": feature_cols,
-        "model": "SimpleImputer(median) -> StandardScaler -> LogisticRegression(lbfgs)",
+        "model": f"SimpleImputer(median) -> StandardScaler -> HistGradientBoosting(max_iter={max_iter})",
         "class_labels": TARGET_LABELS,
         "train_date_range": [
             str(train_df["Date"].min().date()),

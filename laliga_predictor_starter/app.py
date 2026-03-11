@@ -546,10 +546,10 @@ render_metric_cards([
     ("Features", str(len(feature_order)), "Numeric model inputs"),
 ])
 
-tab_train, tab_predict, tab_about = st.tabs(["Train", "Predict", "About"])
+tab_main, tab_about = st.tabs(["Train & Predict", "About"])
 
-with tab_train:
-    st.markdown('<p class="section-label">Training & data</p>', unsafe_allow_html=True)
+with tab_main:
+    st.markdown('<p class="section-label">1. Training & data</p>', unsafe_allow_html=True)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     status = artifact_status()
     render_metric_cards([
@@ -597,7 +597,7 @@ with tab_train:
     st.markdown('</div>', unsafe_allow_html=True)
 
     if meta:
-        st.markdown('<p class="section-label" style="margin-top:1rem;">Model info</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-label" style="margin-top:0.5rem;">Model info</p>', unsafe_allow_html=True)
         metadata_rows = [
             ("Accuracy", meta.get("accuracy_time_split")),
             ("Log loss", meta.get("logloss_time_split")),
@@ -608,9 +608,7 @@ with tab_train:
         ]
         st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
-with tab_predict:
-    st.markdown(f'<p class="section-label">Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-label">1. Select match</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="section-label" style="margin-top:1.25rem;">2. Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
     st.markdown('<div class="section-box">', unsafe_allow_html=True)
     col_home, col_vs, col_away = st.columns([2, 0.4, 2])
     with col_home:
@@ -622,7 +620,6 @@ with tab_predict:
         away = st.selectbox("Away", away_options if away_options else teams, index=0, key="away_team_ui", label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<p class="section-label">2. Get prediction</p>', unsafe_allow_html=True)
     predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
 
     with st.expander("Blend with bookmaker odds (optional)"):
@@ -709,7 +706,7 @@ with tab_about:
     )
     st.write(
         """
-        The predictor uses logistic regression over rolling team form, rest days, and Elo ratings (football-data.co.uk).
+        The predictor uses gradient boosting (HistGradientBoosting) over rolling team form, rest days, and Elo ratings (football-data.co.uk).
         Teams shown in Predict are those active in the selected prediction season (from features.parquet).
         You can blend the model with live 1X2 bookmaker odds for a market-aware view.
         """
