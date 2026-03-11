@@ -40,8 +40,7 @@ ROLLING_WINDOWS = CONFIG.get("rolling_windows", [5])
 # Utilities
 # ----------------------------
 def _season_codes_default() -> List[str]:
-    # Extend if you want; app passes explicit selections anyway.
-    return ["2122", "2223", "2324", "2425", "2526"]
+    return CONFIG.get("seasons", ["2122", "2223", "2324", "2425", "2526"])
 
 def _load_one_csv(season: str) -> Optional[pd.DataFrame]:
     fp = RAW_DIR / f"{LEAGUE}_{season}.csv"
@@ -79,7 +78,7 @@ def _load_one_csv(season: str) -> Optional[pd.DataFrame]:
     df = df.dropna(subset=["HomeTeam", "AwayTeam"]).copy()
 
     # Ensure SOT exists (fill with NaN if absent -> becomes 0 later in rolling means)
-    for c in ["HST", "AST"]:
+    for c in ["HST", "AST", "HS", "AS", "HC", "AC", "HF", "AF"]:
         if c not in df.columns:
             df[c] = np.nan
 
@@ -179,7 +178,7 @@ def compute_elo_timeseries(matches: pd.DataFrame,
 def make_long_frame(df: pd.DataFrame) -> pd.DataFrame:
     # For each match, make two rows (home perspective & away perspective)
     # Keep only columns we need and coerce to numeric as needed.
-    keep = ["Date","HomeTeam","AwayTeam","FTHG","FTAG","HST","AST","Season"]
+    keep = ["Date","HomeTeam","AwayTeam","FTHG","FTAG","HST","AST","HS","AS","HC","AC","HF","AF","Season"]
     for c in keep:
         if c not in df.columns:
             df[c] = np.nan
@@ -194,6 +193,12 @@ def make_long_frame(df: pd.DataFrame) -> pd.DataFrame:
         "GA": pd.to_numeric(tmp["FTAG"], errors="coerce"),
         "SOT_for": pd.to_numeric(tmp["HST"], errors="coerce"),
         "SOT_against": pd.to_numeric(tmp["AST"], errors="coerce"),
+        "Shots_for": pd.to_numeric(tmp["HS"], errors="coerce"),
+        "Shots_against": pd.to_numeric(tmp["AS"], errors="coerce"),
+        "Corners_for": pd.to_numeric(tmp["HC"], errors="coerce"),
+        "Corners_against": pd.to_numeric(tmp["AC"], errors="coerce"),
+        "Fouls_for": pd.to_numeric(tmp["HF"], errors="coerce"),
+        "Fouls_against": pd.to_numeric(tmp["AF"], errors="coerce"),
         "Season": tmp["Season"]
     })
     away_part = pd.DataFrame({
@@ -205,6 +210,12 @@ def make_long_frame(df: pd.DataFrame) -> pd.DataFrame:
         "GA": pd.to_numeric(tmp["FTHG"], errors="coerce"),
         "SOT_for": pd.to_numeric(tmp["AST"], errors="coerce"),
         "SOT_against": pd.to_numeric(tmp["HST"], errors="coerce"),
+        "Shots_for": pd.to_numeric(tmp["AS"], errors="coerce"),
+        "Shots_against": pd.to_numeric(tmp["HS"], errors="coerce"),
+        "Corners_for": pd.to_numeric(tmp["AC"], errors="coerce"),
+        "Corners_against": pd.to_numeric(tmp["HC"], errors="coerce"),
+        "Fouls_for": pd.to_numeric(tmp["AF"], errors="coerce"),
+        "Fouls_against": pd.to_numeric(tmp["HF"], errors="coerce"),
         "Season": tmp["Season"]
     })
     long = pd.concat([home_part, away_part], ignore_index=True)
@@ -221,6 +232,12 @@ def add_pre_match_rollups(long: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     long["team_last_gd"]  = long["team_last_gf"] - long["team_last_ga"]
     long["team_last_sot_for"]     = g["SOT_for"].shift(1).rolling(window, min_periods=1).mean()
     long["team_last_sot_against"] = g["SOT_against"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_shots_for"]   = g["Shots_for"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_shots_against"] = g["Shots_against"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_corners_for"] = g["Corners_for"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_corners_against"] = g["Corners_against"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_fouls_for"]   = g["Fouls_for"].shift(1).rolling(window, min_periods=1).mean()
+    long["team_last_fouls_against"] = g["Fouls_against"].shift(1).rolling(window, min_periods=1).mean()
 
     # Rest days since last match
     long["prev_date"] = g["Date"].shift(1)
@@ -248,6 +265,9 @@ def assemble_match_features(df: pd.DataFrame,
     pre_cols = [
         "team_last_gf", "team_last_ga", "team_last_gd",
         "team_last_sot_for", "team_last_sot_against",
+        "team_last_shots_for", "team_last_shots_against",
+        "team_last_corners_for", "team_last_corners_against",
+        "team_last_fouls_for", "team_last_fouls_against",
         "team_rest_days",
     ]
     # be robust if long is missing any expected columns
@@ -290,12 +310,26 @@ def assemble_match_features(df: pd.DataFrame,
         "home_last_gd","away_last_gd",
         "home_last_sot_for","away_last_sot_for",
         "home_last_sot_against","away_last_sot_against",
+        "home_last_shots_for","away_last_shots_for",
+        "home_last_corners_for","away_last_corners_for",
+        "home_last_fouls_for","away_last_fouls_for",
     ], fill_val=0.0)
 
     df["form_gd_diff"]           = df["home_last_gd"] - df["away_last_gd"]
     df["form_sot_for_diff"]      = df["home_last_sot_for"] - df["away_last_sot_for"]
     df["form_sot_against_diff"]  = df["home_last_sot_against"] - df["away_last_sot_against"]
+    df["form_shots_for_diff"]    = df["home_last_shots_for"] - df["away_last_shots_for"]
+    df["form_corners_for_diff"]  = df["home_last_corners_for"] - df["away_last_corners_for"]
+    df["form_fouls_for_diff"]    = df["home_last_fouls_for"] - df["away_last_fouls_for"]
     df["rest_days_diff"]         = df["rest_days_home"] - df["rest_days_away"]
+
+    # xG columns (from Understat merge) — ensure present for model
+    df = ensure_cols(df, ["xg_home", "xg_away", "xg_diff"], fill_val=np.nan)
+    xg_fallback = (
+        pd.to_numeric(df["xg_home"], errors="coerce").fillna(0)
+        - pd.to_numeric(df["xg_away"], errors="coerce").fillna(0)
+    )
+    df["xg_diff"] = df["xg_diff"].fillna(xg_fallback)
 
     return df
 
@@ -383,6 +417,18 @@ def build_features(seasons: Optional[List[str]] = None) -> Tuple[pd.DataFrame, p
 
     df = df.sort_values("Date").reset_index(drop=True)
 
+    # Optional: merge Understat xG if available (fetch on first run)
+    try:
+        from src.understat_loader import load_and_merge_xg, refresh_xg
+        used = df["Season"].dropna().astype(str).unique().tolist() if "Season" in df.columns else None
+        if used:
+            refresh_xg(seasons=used)
+        df = load_and_merge_xg(df)
+    except Exception:
+        df["xg_home"] = np.nan
+        df["xg_away"] = np.nan
+        df["xg_diff"] = 0.0
+
     # Long and pre features
     long = make_long_frame(df)
     long = add_pre_match_rollups(long, window=int(ROLLING_WINDOWS[0]))
@@ -403,21 +449,17 @@ def build_features(seasons: Optional[List[str]] = None) -> Tuple[pd.DataFrame, p
     last_day = feats["Date"].max()
 
     # Last per-team rolling stats on/just before last_day
+    latest_cols = ["Team", "team_last_gf", "team_last_ga", "team_last_gd",
+                   "team_last_sot_for", "team_last_sot_against",
+                   "team_last_shots_for", "team_last_shots_against",
+                   "team_last_corners_for", "team_last_corners_against",
+                   "team_last_fouls_for", "team_last_fouls_against",
+                   "team_rest_days"]
+    latest_cols = [c for c in latest_cols if c in long.columns]
     long_latest = (
         long.sort_values("Date")
             .drop_duplicates(subset=["Team"], keep="last")
-            .loc[:, ["Team",
-                     "team_last_gf","team_last_ga","team_last_gd",
-                     "team_last_sot_for","team_last_sot_against",
-                     "team_rest_days"]]
-            .rename(columns={
-                "team_last_gf":"team_last_gf",
-                "team_last_ga":"team_last_ga",
-                "team_last_gd":"team_last_gd",
-                "team_last_sot_for":"team_last_sot_for",
-                "team_last_sot_against":"team_last_sot_against",
-                "team_rest_days":"team_rest_days",
-            })
+            .loc[:, latest_cols]
             .reset_index(drop=True)
     )
 

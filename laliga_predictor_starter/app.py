@@ -421,6 +421,9 @@ def vector_for_match(home: str, away: str, feature_order, ts: pd.DataFrame, feat
         "team_last_gd": ("home_last_gd", "away_last_gd"),
         "team_last_sot_for": ("home_last_sot_for", "away_last_sot_for"),
         "team_last_sot_against": ("home_last_sot_against", "away_last_sot_against"),
+        "team_last_shots_for": ("home_last_shots_for", "away_last_shots_for"),
+        "team_last_corners_for": ("home_last_corners_for", "away_last_corners_for"),
+        "team_last_fouls_for": ("home_last_fouls_for", "away_last_fouls_for"),
         "team_rest_days": ("rest_days_home", "rest_days_away"),
     }
     for team_col, (home_col, away_col) in mapping.items():
@@ -435,6 +438,12 @@ def vector_for_match(home: str, away: str, feature_order, ts: pd.DataFrame, feat
         row["form_sot_for_diff"] = row.get("home_last_sot_for", 0.0) - row.get("away_last_sot_for", 0.0)
     if "form_sot_against_diff" in row.index:
         row["form_sot_against_diff"] = row.get("home_last_sot_against", 0.0) - row.get("away_last_sot_against", 0.0)
+    if "form_shots_for_diff" in row.index:
+        row["form_shots_for_diff"] = row.get("home_last_shots_for", 0.0) - row.get("away_last_shots_for", 0.0)
+    if "form_corners_for_diff" in row.index:
+        row["form_corners_for_diff"] = row.get("home_last_corners_for", 0.0) - row.get("away_last_corners_for", 0.0)
+    if "form_fouls_for_diff" in row.index:
+        row["form_fouls_for_diff"] = row.get("home_last_fouls_for", 0.0) - row.get("away_last_fouls_for", 0.0)
     if "rest_days_diff" in row.index:
         row["rest_days_diff"] = row.get("rest_days_home", 0.0) - row.get("rest_days_away", 0.0)
 
@@ -610,7 +619,6 @@ with tab_main:
         st.dataframe(pd.DataFrame(metadata_rows, columns=["Field", "Value"]), use_container_width=True, hide_index=True)
 
     st.markdown(f'<p class="section-label" style="margin-top:1.25rem;">2. Predict · {season_code_to_label(predict_season)}</p>', unsafe_allow_html=True)
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
     col_home, col_vs, col_away = st.columns([2, 0.4, 2])
     with col_home:
         home = st.selectbox("Home", teams, index=0, key="home_team_ui", label_visibility="collapsed")
@@ -619,7 +627,6 @@ with tab_main:
     with col_away:
         away_options = [t for t in teams if t != home]
         away = st.selectbox("Away", away_options if away_options else teams, index=0, key="away_team_ui", label_visibility="collapsed")
-    st.markdown('</div>', unsafe_allow_html=True)
 
     predict_clicked = st.button("Generate prediction", key="btn_predict_main", type="primary")
 

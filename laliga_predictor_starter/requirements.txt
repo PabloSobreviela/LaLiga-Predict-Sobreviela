@@ -7,3 +7,5 @@ python-dotenv>=1.0
 joblib>=1.4
 pyyaml>=6.0
 pyarrow>=17.0
+understatapi>=0.0.5
+xgboost>=2.0
