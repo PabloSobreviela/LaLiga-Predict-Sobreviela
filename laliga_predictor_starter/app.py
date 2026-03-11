@@ -570,8 +570,8 @@ if not teams:
 alias_lookup = build_alias_lookup(teams)
 
 render_metric_cards([
-    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0):.3f}", "Time-split 83/17"),
-    ("Precision", f"{meta.get('precision_time_split', 0.0):.3f}", "Macro avg"),
+    ("Accuracy", f"{meta.get('accuracy_time_split', 0.0)*100:.1f}%", "Time-split 83/17"),
+    ("Precision", f"{meta.get('precision_time_split', 0.0)*100:.1f}%", "Macro avg"),
     ("Log loss", f"{meta.get('logloss_time_split', 0.0):.3f}", "Lower is better"),
     ("Teams", str(len(teams)), f"Active in {season_code_to_label(predict_season)}"),
 ])
@@ -622,7 +622,7 @@ with tab_main:
                 get_teams_for_season.clear()
                 prec = rebuilt.get("meta", {}).get("precision_time_split", 0)
                 status_box.update(
-                    label=f"Training complete. Acc={rebuilt['accuracy']:.3f} Prec={prec:.3f} LogLoss={rebuilt['logloss']:.3f}",
+                    label=f"Training complete. Acc={rebuilt['accuracy']*100:.1f}% Prec={prec*100:.1f}% LogLoss={rebuilt['logloss']:.3f}",
                     state="complete",
                 )
                 st.success("Artifacts refreshed. Reloading app...")
@@ -635,8 +635,8 @@ with tab_main:
     if meta:
         st.markdown('<p class="section-label" style="margin-top:0.5rem;">Model info</p>', unsafe_allow_html=True)
         metadata_rows = [
-            ("Accuracy", meta.get("accuracy_time_split")),
-            ("Precision", meta.get("precision_time_split")),
+            ("Accuracy", f"{meta.get('accuracy_time_split', 0)*100:.1f}%" if meta.get("accuracy_time_split") is not None else "Not recorded"),
+            ("Precision", f"{meta.get('precision_time_split', 0)*100:.1f}%" if meta.get("precision_time_split") is not None else "Not recorded"),
             ("Log loss", meta.get("logloss_time_split")),
             ("Train rows", meta.get("n_train")),
             ("Test rows", meta.get("n_test")),
@@ -742,7 +742,7 @@ with tab_main:
                 market_probs, _ = normalize_probs_from_odds(odds_home, odds_draw, odds_away)
                 blended = (1 - market_weight) * np.array(model_probs) + market_weight * np.array(market_probs)
                 final_probs = (blended / blended.sum()).tolist()
-                result_note = f"Blended with market weight {market_weight:.2f}"
+                result_note = f"Blended with market weight {market_weight*100:.0f}%"
 
             winner_idx = int(np.argmax(final_probs))
             label_txt = ["Home win", "Draw", "Away win"][winner_idx]
@@ -753,9 +753,9 @@ with tab_main:
             details_df = pd.DataFrame(
                 {
                     "Source": ["Model", "Final output"],
-                    "H": [round(model_probs[0], 3), round(final_probs[0], 3)],
-                    "D": [round(model_probs[1], 3), round(final_probs[1], 3)],
-                    "A": [round(model_probs[2], 3), round(final_probs[2], 3)],
+                    "H": [f"{model_probs[0]*100:.1f}%", f"{final_probs[0]*100:.1f}%"],
+                    "D": [f"{model_probs[1]*100:.1f}%", f"{final_probs[1]*100:.1f}%"],
+                    "A": [f"{model_probs[2]*100:.1f}%", f"{final_probs[2]*100:.1f}%"],
                 }
             )
             st.dataframe(details_df, use_container_width=True, hide_index=True)
