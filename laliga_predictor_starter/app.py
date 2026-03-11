@@ -682,7 +682,7 @@ with tab_main:
     away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;padding-left:1rem;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;padding-left:calc(1rem + 3px);flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:.5rem;">
             <span style="font-weight:700;font-size:1.35rem;color:#f7fafc;">{home_display}</span>
             <span>{home_img}</span>
