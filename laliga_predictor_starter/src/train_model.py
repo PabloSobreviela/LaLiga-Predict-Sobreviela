@@ -126,6 +126,7 @@ def train(max_iter: int = DEFAULT_MAX_ITER) -> Tuple[float, float, Dict]:
     y_proba = pipe.predict_proba(X_test)
 
     acc = float(accuracy_score(y_test, y_pred))
+    prec = float(precision_score(y_test, y_pred, average="macro", zero_division=0))
     try:
         ll = float(log_loss(y_test, y_proba))
     except ValueError:
@@ -135,6 +136,7 @@ def train(max_iter: int = DEFAULT_MAX_ITER) -> Tuple[float, float, Dict]:
 
     meta = {
         "accuracy_time_split": acc,
+        "precision_time_split": prec,
         "logloss_time_split": ll,
         "n_train": int(len(train_df)),
         "n_test": int(len(test_df)),
