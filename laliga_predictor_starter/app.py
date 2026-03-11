@@ -672,7 +672,7 @@ with tab_main:
             format_func=lambda t: get_display_name(t),
         )
 
-    # La Liga match format: Crest | Team Name | VS | Team Name | Crest — centered
+    # La Liga match format: Team Name | Shield | VS | Shield | Team Name — centered, shifted right
     home_crest = get_crest_url(home)
     away_crest = get_crest_url(away)
     home_display = get_display_name(home)
@@ -682,10 +682,10 @@ with tab_main:
     away_img = f'<img src="{away_crest}" alt="" style="{crest_style}" onerror="this.style.display=\'none\'"/>' if away_crest else ""
     st.markdown(
         f"""
-        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:1.25rem;margin:1rem 0;padding-left:2rem;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:.5rem;">
-            <span>{home_img}</span>
             <span style="font-weight:700;font-size:1.1rem;color:#f7fafc;">{home_display}</span>
+            <span>{home_img}</span>
           </div>
           <span style="font-weight:800;font-size:1rem;color:#718096;letter-spacing:.1em;">VS</span>
           <div style="display:flex;align-items:center;gap:.5rem;">
